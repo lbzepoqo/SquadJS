@@ -12,3 +12,16 @@ yarn.lock
 # IDEs
 .idea/
 .vs/
+
+# Third-party plugin builds, installed on the server only
+squad-server/plugins/*.build.min.js
+
+# Server runtime config and data
+config_active*.json
+*-state.json
+*-state.json.tmp
+*.sqlite*
+*.log
+squadjs-logs/
+data/
+squad-server/MySquadStats_Data/
