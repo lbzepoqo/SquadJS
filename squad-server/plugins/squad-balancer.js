@@ -485,7 +485,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
         const teamStats = processTeamStats(matchData);
         this.teamStats.team1 = { ...this.teamStats.team1, ...teamStats.team1 };
         this.teamStats.team2 = { ...this.teamStats.team2, ...teamStats.team2 };
-        if (scoringSource === 'DBLog') {
+        if (scoringSource.type === 'DBLog') {
           scoredTeam1 = scoredTeam1.map((squad) => calculateSquadScore(squad, matchData, weights));
           scoredTeam2 = scoredTeam2.map((squad) => calculateSquadScore(squad, matchData, weights));
         }
