@@ -741,6 +741,13 @@ export default class DBLog extends BasePlugin {
   }
 
   async dropAllForeignKeys() {
+    // Skip for SQLite - it doesn't support information_schema or ALTER TABLE DROP FOREIGN KEY
+    const dialect = this.options.database.getDialect();
+    if (dialect === 'sqlite') {
+      this.verbose(2, 'Skipping foreign key cleanup - not supported in SQLite');
+      return;
+    }
+
     this.verbose(
       1,
       `Starting to drop constraints on DB: ${this.options.database.config.database} related to DBLog_SteamUsers deptecated table.`
