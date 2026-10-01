@@ -55,38 +55,51 @@ export default class DBLog extends BasePlugin {
       }
     });
 
-    this.createModel('Match', {
-      id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
+    this.createModel(
+      'Match',
+      {
+        id: {
+          type: DataTypes.INTEGER,
+          primaryKey: true,
+          autoIncrement: true
+        },
+        dlc: {
+          type: DataTypes.STRING
+        },
+        mapClassname: {
+          type: DataTypes.STRING
+        },
+        layerClassname: {
+          type: DataTypes.STRING
+        },
+        map: {
+          type: DataTypes.STRING
+        },
+        layer: {
+          type: DataTypes.STRING
+        },
+        startTime: {
+          type: DataTypes.DATE,
+          notNull: true
+        },
+        endTime: {
+          type: DataTypes.DATE
+        },
+        winner: {
+          type: DataTypes.STRING
+        }
       },
-      dlc: {
-        type: DataTypes.STRING
-      },
-      mapClassname: {
-        type: DataTypes.STRING
-      },
-      layerClassname: {
-        type: DataTypes.STRING
-      },
-      map: {
-        type: DataTypes.STRING
-      },
-      layer: {
-        type: DataTypes.STRING
-      },
-      startTime: {
-        type: DataTypes.DATE,
-        notNull: true
-      },
-      endTime: {
-        type: DataTypes.DATE
-      },
-      winner: {
-        type: DataTypes.STRING
+      {
+        indexes: [
+          {
+            fields: ['server', 'endTime']
+          },
+          {
+            fields: ['server', 'startTime']
+          }
+        ]
       }
-    });
+    );
 
     this.createModel('TickRate', {
       id: {
@@ -226,7 +239,12 @@ export default class DBLog extends BasePlugin {
       },
       {
         charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci'
+        collate: 'utf8mb4_unicode_ci',
+        indexes: [
+          {
+            fields: ['match']
+          }
+        ]
       }
     );
 
@@ -275,7 +293,12 @@ export default class DBLog extends BasePlugin {
       },
       {
         charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci'
+        collate: 'utf8mb4_unicode_ci',
+        indexes: [
+          {
+            fields: ['match']
+          }
+        ]
       }
     );
 
@@ -333,7 +356,12 @@ export default class DBLog extends BasePlugin {
       },
       {
         charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci'
+        collate: 'utf8mb4_unicode_ci',
+        indexes: [
+          {
+            fields: ['match']
+          }
+        ]
       }
     );
 
@@ -445,9 +473,10 @@ export default class DBLog extends BasePlugin {
     this.dropAllForeignKeys = this.dropAllForeignKeys.bind(this);
   }
 
-  createModel(name, schema) {
+  createModel(name, schema, options = {}) {
     this.models[name] = this.options.database.define(`DBLog_${name}`, schema, {
-      timestamps: false
+      timestamps: false,
+      ...options
     });
   }
 
