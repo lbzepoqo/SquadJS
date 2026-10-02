@@ -3,7 +3,8 @@ import { ChannelFlags, ChannelType } from 'discord.js';
 const IN_USE = '✅';
 const SKIPPED = '⚠️';
 const TITLE_MAX_LENGTH = 100;
-const MESSAGES_PER_POST = 50;
+const MESSAGES_PER_POST = 100;
+const SET_COMMAND = /^!set(?:\s+|$)/i;
 
 // A post title is "Name | alias1, alias2". Without "|", the whole title is the name.
 export function parseTitle(title) {
@@ -24,10 +25,11 @@ export function buildTitle(broadcast) {
   return `${broadcast.name}${aliases}`.slice(0, TITLE_MAX_LENGTH);
 }
 
-// A message counts as broadcast text when it has text and does not start with "//".
-export function isBroadcastText(message) {
-  const text = (message.content || '').trim();
-  return text.length > 0 && !text.startsWith('//');
+// Returns the new text of a "!set <text>" reply, "" for "!set" without text, or null for other messages.
+export function parseSetCommand(content) {
+  const text = (content || '').trim();
+  if (!SET_COMMAND.test(text)) return null;
+  return text.replace(SET_COMMAND, '').trim();
 }
 
 export default class ForumBroadcasts {
@@ -90,41 +92,75 @@ export default class ForumBroadcasts {
       const messages = [...(await post.messages.fetch({ limit: MESSAGES_PER_POST })).values()].sort(
         (a, b) => b.createdTimestamp - a.createdTimestamp
       );
+      // The first message of a post can be older than the fetched messages in a long post.
+      const starter =
+        messages.find((message) => message.id === post.id) ??
+        (await post.fetchStarterMessage().catch(() => null));
 
+      // The text is the newest "!set <text>" reply, or else the first message of the post.
+      // Other replies are discussion and change nothing.
       let current = null;
+      let text = null;
       for (const message of messages) {
-        if (!isBroadcastText(message)) continue;
+        if (message === starter) continue;
+        const newText = parseSetCommand(message.content);
+        if (newText === null) continue;
+        if (!newText) {
+          await this.setReaction(message, SKIPPED, true);
+          this.verbose(1, `Post "${post.name}": "!set" without text skipped.`);
+          continue;
+        }
         if (!(await this.isEditor(post, message))) {
           await this.setReaction(message, SKIPPED, true);
           this.verbose(
             1,
-            `Post "${post.name}": message by ${message.author?.tag} skipped, no editor role.`
+            `Post "${post.name}": "!set" by ${message.author?.tag} skipped, no editor role.`
           );
           continue;
         }
         current = message;
+        text = newText;
         break;
+      }
+      if (!current && starter) {
+        const starterText = parseSetCommand(starter.content) ?? (starter.content || '').trim();
+        if (starterText) {
+          current = starter;
+          text = starterText;
+        }
       }
 
       let problem = null;
       if (!name) problem = 'the title has no name';
-      else if (!current) problem = 'no message with text';
+      else if (!current) problem = 'no text';
       else if (names.has(name.toLowerCase()))
         problem = `the name "${name}" is used by an older post`;
 
       if (problem) {
         this.verbose(1, `Post "${post.name}" skipped: ${problem}.`);
-        if (current) await this.setReaction(current, SKIPPED, true);
+        await this.setReaction(current ?? starter ?? messages[0], SKIPPED, true);
         continue;
       }
 
       names.add(name.toLowerCase());
-      broadcasts.push({ name, aliases, message: current.content.trim() });
-      await this.markCurrent(messages, current);
+      broadcasts.push({ name, aliases, message: text });
+      await this.markCurrent([...messages, starter].filter(Boolean), current);
+      await this.updateStarter(starter, text);
     }
 
     if (this.order === 'name') broadcasts.sort((a, b) => a.name.localeCompare(b.name));
     return { broadcasts, postCount: posts.length };
+  }
+
+  // The bot can only edit its own messages. For posts it created, the first message always shows the
+  // current text, so the top of the post is what players see.
+  async updateStarter(starter, text) {
+    if (!starter || starter.author?.id !== this.client.user?.id || starter.content === text) return;
+    try {
+      await starter.edit(text);
+    } catch (error) {
+      this.verbose(1, `Could not update the first message of a post: ${error.message}`);
+    }
   }
 
   async isEditor(post, message) {
@@ -137,18 +173,19 @@ export default class ForumBroadcasts {
 
   // Only the message in use keeps ✅. Reactions are changed only when they differ, to keep API calls low.
   async markCurrent(messages, current) {
-    for (const message of messages) {
+    for (const message of new Set(messages)) {
       await this.setReaction(message, IN_USE, message === current);
       if (message === current) await this.setReaction(message, SKIPPED, false);
     }
   }
 
   async setReaction(message, emoji, wanted) {
+    if (!message) return;
     try {
       // "⚠️" can be stored with or without the variation selector U+FE0F.
-      const plain = emoji.replace(/️/g, '');
+      const plain = emoji.replace(/\uFE0F/g, '');
       const reaction = message.reactions.cache.find(
-        (candidate) => (candidate.emoji.name || '').replace(/️/g, '') === plain
+        (candidate) => (candidate.emoji.name || '').replace(/\uFE0F/g, '') === plain
       );
       const present = !!reaction?.me;
       if (wanted && !present) await message.react(emoji);
