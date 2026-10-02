@@ -321,7 +321,7 @@ export default class SquadCreationBlocker extends BasePlugin {
 
   async initializeKnownSquads() {
     try {
-      const squads = await this.server.rcon.getSquads();
+      const [squads] = await this.server.rcon.getSquads();
       this.knownSquads.clear();
       for (const squad of squads) {
         this.knownSquads.add(`${squad.teamID}-${squad.squadID}`);
@@ -337,7 +337,7 @@ export default class SquadCreationBlocker extends BasePlugin {
     this.isPollRunning = true;
 
     try {
-      const squads = await this.server.rcon.getSquads();
+      const [squads] = await this.server.rcon.getSquads();
 
       for (const squad of squads) {
         const squadKey = `${squad.teamID}-${squad.squadID}`;

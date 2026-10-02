@@ -417,7 +417,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
     if (signal.aborted) return;
     const players = await this.server.rcon.getListPlayers();
     if (signal.aborted) return;
-    const squadsSnapshot = await this.server.rcon.getSquads();
+    const [squadsSnapshot] = await this.server.rcon.getSquads();
     const { team1, team2 } = this.groupPlayersBySquad(players);
 
     const team1Count = team1.playerCount;

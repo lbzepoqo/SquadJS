@@ -173,7 +173,7 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
       // Get current server state
       const players = await this.server.rcon.getListPlayers();
       const currentMap = await this.server.rcon.getCurrentMap();
-      const squads = await this.server.rcon.getSquads();
+      const [squads] = await this.server.rcon.getSquads();
 
       // Check if validation should be skipped
       const playerCount = players.length;

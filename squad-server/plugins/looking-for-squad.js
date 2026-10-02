@@ -335,7 +335,7 @@ export default class LookingForSquad extends BasePlugin {
 
   // Helper function to find squad by ID on a specific team
   async findSquadById(squadId, teamId) {
-    const squads = await this.server.rcon.getSquads();
+    const [squads] = await this.server.rcon.getSquads();
     return squads.find((squad) => squad.squadID === squadId && squad.teamID === teamId);
   }
 
@@ -353,7 +353,7 @@ export default class LookingForSquad extends BasePlugin {
   // Helper function to get all eligible squad leaders on a team
   async getEligibleSquadLeaders(teamId) {
     const players = await this.server.rcon.getListPlayers();
-    const squads = await this.server.rcon.getSquads();
+    const [squads] = await this.server.rcon.getSquads();
     const eligibleLeaders = [];
 
     // Create a map of squad_id to squad for the specified team
