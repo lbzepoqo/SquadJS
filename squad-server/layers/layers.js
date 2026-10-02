@@ -7,6 +7,7 @@ import Layer from './layer.js';
 class Layers {
   constructor() {
     this.layers = [];
+    this.units = {};
 
     this.pulled = false;
   }
@@ -21,17 +22,27 @@ class Layers {
     this.layers = [];
 
     Logger.verbose('Layers', 1, 'Pulling layers...');
-    // SquadLayerList layers.old.json uses the same format as the Squad Wiki finished.json and
-    // covers more of the current server layers (Squad 10.6: 21 of 233 missing, against 49).
     const response = await axios.get(
-      'https://raw.githubusercontent.com/fantinodavide/SquadLayerList/refs/heads/main/layers.old.json'
+      'https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/layers.json'
     );
 
+    this.units = response.data.Units || {};
+
+    let skipped = 0;
     for (const layer of response.data.Maps) {
-      this.layers.push(new Layer(layer));
+      try {
+        this.layers.push(new Layer(layer, this.units));
+      } catch (err) {
+        skipped++;
+        Logger.verbose('Layers', 1, `Skipped layer ${layer?.rawName}: ${err.message}`);
+      }
     }
 
-    Logger.verbose('Layers', 1, `Pulled ${this.layers.length} layers.`);
+    Logger.verbose(
+      'Layers',
+      1,
+      `Pulled ${this.layers.length} layers` + (skipped > 0 ? ` (skipped ${skipped}).` : '.')
+    );
 
     this.pulled = true;
 
