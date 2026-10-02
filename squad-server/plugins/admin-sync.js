@@ -453,7 +453,7 @@ export default class AdminSync extends BasePlugin {
       if (!trimmedLine || trimmedLine.startsWith('//')) continue;
 
       if (trimmedLine.startsWith('Group=')) {
-        const match = trimmedLine.match(/^Group=([^:]+):(.*)$/);
+        const match = trimmedLine.match(/^Group=([^:]+):(.*?)\s*(?:\/\/.*)?$/);
         if (match) {
           const [, groupName, permissions] = match;
           groups.set(groupName, permissions);
@@ -533,7 +533,8 @@ export default class AdminSync extends BasePlugin {
       output.push('// Administrative Groups');
       for (const [groupName, permissions] of adminGroups.sort()) {
         const count = admins.get(groupName)?.length || 0;
-        output.push(`Group=${groupName}:${permissions} // ${count} members`);
+        // Squad may not strip a trailing comment from a Group line, so the count goes on its own line.
+        output.push(`// ${groupName}: ${count} members`, `Group=${groupName}:${permissions}`);
       }
       output.push('');
     }
@@ -543,7 +544,7 @@ export default class AdminSync extends BasePlugin {
       output.push('// Special Groups');
       for (const [groupName, permissions] of specialGroups.sort()) {
         const count = admins.get(groupName)?.length || 0;
-        output.push(`Group=${groupName}:${permissions} // ${count} members`);
+        output.push(`// ${groupName}: ${count} members`, `Group=${groupName}:${permissions}`);
       }
       output.push('');
     }
@@ -553,7 +554,7 @@ export default class AdminSync extends BasePlugin {
       output.push('// Clan Groups');
       for (const [groupName, permissions] of clanGroups.sort()) {
         const count = admins.get(groupName)?.length || 0;
-        output.push(`Group=${groupName}:${permissions} // ${count} members`);
+        output.push(`// ${groupName}: ${count} members`, `Group=${groupName}:${permissions}`);
       }
       output.push('');
     }
