@@ -14,7 +14,8 @@ export default class RconRecorder extends BasePlugin {
       'The <code>RconRecorder</code> plugin records every RCON command that SquadJS sends with its ' +
       'response, the messages the server pushes over RCON, and optionally every game log line that ' +
       'SquadJS reads. It writes one JSON line per entry into one file per UTC hour, compresses finished ' +
-      'hours with gzip, and deletes old files by age and total size. It sends no extra RCON commands.'
+      'hours with gzip, and deletes old files by age and total size. A response that equals the previous ' +
+      'response of the same command is written as <code>"same": true</code>. It sends no extra RCON commands.'
     );
   }
 
@@ -157,6 +158,19 @@ export default class RconRecorder extends BasePlugin {
       const hour = entry.time.slice(0, 13);
       if (hour !== this.currentHour) this.rotate(hour);
       if (!this.stream || this.writeFailed) return;
+
+      // A response that equals the previous response of the same command in this file is written
+      // as "same": true. PlayersSquadsList polls ListPlayers and ListSquads every 500 ms, and most
+      // of these responses do not change.
+      if (entry.type === 'rcon') {
+        if (this.lastResponses.get(entry.command) === entry.response) {
+          const { response, ...rest } = entry;
+          entry = { ...rest, same: true };
+        } else {
+          this.lastResponses.set(entry.command, entry.response);
+        }
+      }
+
       this.stream.write(JSON.stringify(entry) + '\n');
     } catch (error) {
       this.verbose(1, `Could not record an entry: ${error.message}`);
@@ -180,6 +194,8 @@ export default class RconRecorder extends BasePlugin {
 
   openStream() {
     this.writeFailed = false;
+    // Each file starts with full responses, so it can be read on its own.
+    this.lastResponses = new Map();
     this.stream = fs.createWriteStream(this.filePath(this.currentHour), { flags: 'a' });
     this.stream.on('error', (error) => {
       // Writing stops until the next hour opens a new file.
