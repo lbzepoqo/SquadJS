@@ -1,8 +1,16 @@
+import fs from 'fs';
+
 import BasePlugin from './base-plugin.js';
+import ForumBroadcasts from './admin-broadcast-commands/forum-broadcasts.js';
 
 export default class AdminBroadcastCommands extends BasePlugin {
   static get description() {
-    return 'Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode.';
+    return (
+      'Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode. ' +
+      'The broadcasts can be kept in a Discord forum channel: one post per broadcast, the post title is ' +
+      '<code>Name | alias1, alias2</code>, and the newest message in the post that has text and does not start ' +
+      'with <code>//</code> is the broadcast text. Changes apply without a restart.'
+    );
   }
 
   static get defaultEnabled() {
@@ -37,9 +45,55 @@ export default class AdminBroadcastCommands extends BasePlugin {
         default: '(cont.) '
       },
       broadcasts: {
-        required: true,
-        description: 'An array of broadcast options with name, aliases, and message.',
+        required: false,
+        description:
+          'An array of broadcast options with name, aliases, and message. With a forum channel, these are used ' +
+          'until the forum is loaded, and to create the first posts when the forum is empty.',
         default: []
+      },
+      discordClient: {
+        required: false,
+        description: 'Discord connector name. Needed only for a forum channel.',
+        connector: 'discord',
+        default: 'discord'
+      },
+      forumChannelID: {
+        required: false,
+        description:
+          'ID of the Discord forum channel with the broadcasts. Leave empty to use only the config.',
+        default: ''
+      },
+      editorRoleIDs: {
+        required: false,
+        description:
+          'Role IDs whose messages count as broadcast text. Leave empty to accept every message that ' +
+          'the channel permissions allow.',
+        default: []
+      },
+      order: {
+        required: false,
+        description:
+          'Order of the forum broadcasts in the list: "created" (oldest post first, new posts are added at ' +
+          'the end) or "name".',
+        default: 'created'
+      },
+      seedForumFromConfig: {
+        required: false,
+        description: 'When the forum has no posts, create one post per configured broadcast.',
+        default: true
+      },
+      reloadInterval: {
+        required: false,
+        description:
+          'Time between full reloads of the forum, in milliseconds. Edits of older messages are not ' +
+          'always reported by Discord, so they are picked up by this reload.',
+        default: 10 * 60 * 1000
+      },
+      stateFile: {
+        required: false,
+        description:
+          'File for the last list loaded from the forum, used when Discord is not available at startup.',
+        default: './admin-broadcast-commands-state.json'
       }
     };
   }
@@ -48,14 +102,129 @@ export default class AdminBroadcastCommands extends BasePlugin {
     super(server, options, connectors);
 
     this.onChatMessage = this.onChatMessage.bind(this);
+    this.onForumEvent = this.onForumEvent.bind(this);
+    this.reloadForum = this.reloadForum.bind(this);
+
+    this.broadcasts = this.options.broadcasts;
+    this.reloadRunning = false;
+    this.reloadPending = false;
   }
 
   async mount() {
     this.server.on('CHAT_MESSAGE', this.onChatMessage);
+
+    if (!this.options.forumChannelID) return;
+    if (!this.options.discordClient) {
+      this.verbose(
+        1,
+        'forumChannelID is set, but the Discord connector is missing. Using the config.'
+      );
+      return;
+    }
+
+    this.loadState();
+    this.forum = new ForumBroadcasts({
+      client: this.options.discordClient,
+      forumChannelID: this.options.forumChannelID,
+      editorRoleIDs: this.options.editorRoleIDs,
+      order: this.options.order,
+      verbose: (...args) => this.verbose(...args)
+    });
+
+    this.forumEvents = [
+      'threadCreate',
+      'threadUpdate',
+      'threadDelete',
+      'messageCreate',
+      'messageUpdate',
+      'messageDelete'
+    ];
+    for (const event of this.forumEvents) this.options.discordClient.on(event, this.onForumEvent);
+    this.reloadTimer = setInterval(this.reloadForum, this.options.reloadInterval);
+
+    await this.reloadForum();
   }
 
   async unmount() {
     this.server.removeListener('CHAT_MESSAGE', this.onChatMessage);
+    if (this.forumEvents)
+      for (const event of this.forumEvents)
+        this.options.discordClient.removeListener(event, this.onForumEvent);
+    clearInterval(this.reloadTimer);
+    clearTimeout(this.reloadDebounce);
+  }
+
+  // Thread events pass the thread; message events pass the message, whose channel is the thread.
+  onForumEvent(item) {
+    const thread = item?.isThread?.() ? item : item?.channel;
+    const parentID =
+      thread?.parentId ?? this.options.discordClient.channels.cache.get(item?.channelId)?.parentId;
+    if (parentID !== this.options.forumChannelID) return;
+
+    // Several changes in a few seconds lead to one reload.
+    clearTimeout(this.reloadDebounce);
+    this.reloadDebounce = setTimeout(this.reloadForum, 3000);
+  }
+
+  async reloadForum() {
+    if (this.reloadRunning) {
+      this.reloadPending = true;
+      return;
+    }
+    this.reloadRunning = true;
+
+    try {
+      let result = await this.forum.load();
+      if (
+        result.postCount === 0 &&
+        this.options.seedForumFromConfig &&
+        this.options.broadcasts.length > 0
+      ) {
+        await this.forum.seed(this.options.broadcasts);
+        result = await this.forum.load();
+      }
+
+      if (result.broadcasts.length === 0) {
+        this.verbose(1, 'The forum has no usable broadcasts. The previous list stays in use.');
+      } else {
+        this.broadcasts = result.broadcasts;
+        await this.saveState();
+        this.verbose(1, `Loaded ${this.broadcasts.length} broadcasts from the forum.`);
+      }
+    } catch (error) {
+      this.verbose(1, `Could not load the forum. The previous list stays in use: ${error.message}`);
+    } finally {
+      this.reloadRunning = false;
+      if (this.reloadPending) {
+        this.reloadPending = false;
+        this.reloadForum();
+      }
+    }
+  }
+
+  loadState() {
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.options.stateFile, 'utf8'));
+      if (Array.isArray(saved.broadcasts) && saved.broadcasts.length > 0) {
+        this.broadcasts = saved.broadcasts;
+        this.verbose(1, `Using ${saved.broadcasts.length} broadcasts saved at ${saved.savedAt}.`);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT')
+        this.verbose(1, `Could not read ${this.options.stateFile}: ${error.message}`);
+    }
+  }
+
+  // Written to a temporary file and renamed, so a stop during the write cannot leave a broken file.
+  async saveState() {
+    const state = { savedAt: new Date().toISOString(), broadcasts: this.broadcasts };
+    const temporaryFile = `${this.options.stateFile}.tmp`;
+    try {
+      await fs.promises.writeFile(temporaryFile, JSON.stringify(state, null, 2));
+      await fs.promises.rename(temporaryFile, this.options.stateFile);
+    } catch (error) {
+      this.verbose(1, `Could not write ${this.options.stateFile}: ${error.message}`);
+    }
   }
 
   async onChatMessage(info) {
@@ -155,7 +324,7 @@ export default class AdminBroadcastCommands extends BasePlugin {
 
   findMatchingBroadcasts(arg) {
     const lowercaseArg = arg.toLowerCase();
-    return this.options.broadcasts.filter((broadcast, index) => {
+    return this.broadcasts.filter((broadcast, index) => {
       if ((index + 1).toString() === arg) return true;
       if (broadcast.name.toLowerCase().includes(lowercaseArg)) return true;
       return broadcast.aliases.some((alias) => alias.toLowerCase().includes(lowercaseArg));
@@ -166,7 +335,7 @@ export default class AdminBroadcastCommands extends BasePlugin {
     const messages = ['Available broadcast options:'];
     let currentMessage = '';
 
-    this.options.broadcasts.forEach((broadcast, index) => {
+    this.broadcasts.forEach((broadcast, index) => {
       const optionText = `\n${index + 1}. ${broadcast.name}${
         this.options.showAliasesInList ? ` (${broadcast.aliases.join(', ')})` : ''
       }`;
