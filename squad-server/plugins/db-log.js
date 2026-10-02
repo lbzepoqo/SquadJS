@@ -240,9 +240,17 @@ export default class DBLog extends BasePlugin {
       {
         charset: 'utf8mb4',
         collate: 'utf8mb4_unicode_ci',
+        // The player columns reference DBLog_Players.steamID with ON UPDATE CASCADE. Without these
+        // indexes, every Player upsert scans this table once per foreign key.
         indexes: [
           {
             fields: ['match']
+          },
+          {
+            fields: ['attacker']
+          },
+          {
+            fields: ['victim']
           }
         ]
       }
@@ -297,6 +305,12 @@ export default class DBLog extends BasePlugin {
         indexes: [
           {
             fields: ['match']
+          },
+          {
+            fields: ['attacker']
+          },
+          {
+            fields: ['victim']
           }
         ]
       }
@@ -360,6 +374,15 @@ export default class DBLog extends BasePlugin {
         indexes: [
           {
             fields: ['match']
+          },
+          {
+            fields: ['attacker']
+          },
+          {
+            fields: ['victim']
+          },
+          {
+            fields: ['reviver']
           }
         ]
       }
