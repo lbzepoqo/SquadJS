@@ -1568,7 +1568,7 @@ Grafana:
 <details>
           <summary>AdminBroadcastCommands</summary>
           <h2>AdminBroadcastCommands</h2>
-          <p>Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode.</p>
+          <p>Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode. The broadcasts can be kept in a Discord forum channel: one post per broadcast, the post title is <code>Name | alias1, alias2</code>, and the newest message in the post that has text and does not start with <code>//</code> is the broadcast text. Changes apply without a restart.</p>
           <h3>Options</h3>
           <ul><li><h4>commandPrefixes</h4>
            <h6>Description</h6>
@@ -1598,11 +1598,46 @@ Grafana:
            <p>Prefix to add to continuation messages when splitting long broadcasts.</p>
            <h6>Default</h6>
            <pre><code>(cont.) </code></pre></li>
-<li><h4>broadcasts (Required)</h4>
+<li><h4>broadcasts</h4>
            <h6>Description</h6>
-           <p>An array of broadcast options with name, aliases, and message.</p>
+           <p>An array of broadcast options with name, aliases, and message. With a forum channel, these are used until the forum is loaded, and to create the first posts when the forum is empty.</p>
            <h6>Default</h6>
-           <pre><code>[]</code></pre></li></ul>
+           <pre><code>[]</code></pre></li>
+<li><h4>discordClient</h4>
+           <h6>Description</h6>
+           <p>Discord connector name. Needed only for a forum channel.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>forumChannelID</h4>
+           <h6>Description</h6>
+           <p>ID of the Discord forum channel with the broadcasts. Leave empty to use only the config.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>editorRoleIDs</h4>
+           <h6>Description</h6>
+           <p>Role IDs whose messages count as broadcast text. Leave empty to accept every message that the channel permissions allow.</p>
+           <h6>Default</h6>
+           <pre><code>[]</code></pre></li>
+<li><h4>order</h4>
+           <h6>Description</h6>
+           <p>Order of the forum broadcasts in the list: "created" (oldest post first, new posts are added at the end) or "name".</p>
+           <h6>Default</h6>
+           <pre><code>created</code></pre></li>
+<li><h4>seedForumFromConfig</h4>
+           <h6>Description</h6>
+           <p>When the forum has no posts, create one post per configured broadcast.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>reloadInterval</h4>
+           <h6>Description</h6>
+           <p>Time between full reloads of the forum, in milliseconds. Edits of older messages are not always reported by Discord, so they are picked up by this reload.</p>
+           <h6>Default</h6>
+           <pre><code>600000</code></pre></li>
+<li><h4>stateFile</h4>
+           <h6>Description</h6>
+           <p>File for the last list loaded from the forum, used when Discord is not available at startup.</p>
+           <h6>Default</h6>
+           <pre><code>./admin-broadcast-commands-state.json</code></pre></li></ul>
         </details>
 
 <details>

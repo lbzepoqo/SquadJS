@@ -431,7 +431,14 @@
       "delayBetweenMessages": 5000,
       "showAliasesInList": false,
       "multipartMessagePrefix": "(cont.) ",
-      "broadcasts": []
+      "broadcasts": [],
+      "discordClient": "discord",
+      "forumChannelID": "",
+      "editorRoleIDs": [],
+      "order": "created",
+      "seedForumFromConfig": true,
+      "reloadInterval": 600000,
+      "stateFile": "./admin-broadcast-commands-state.json"
     },
     {
       "plugin": "DiscordAdminCamLogs",
