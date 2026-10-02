@@ -1027,6 +1027,48 @@ Grafana:
         </details>
 
 <details>
+          <summary>CpuProfiler</summary>
+          <h2>CpuProfiler</h2>
+          <p>Diagnostics: logs the CPU use of the SquadJS process and the event loop utilization of the main thread, and writes CPU profiles of the main thread to disk.</p>
+          <h3>Options</h3>
+          <ul><li><h4>statsInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between CPU and event loop log lines.</p>
+           <h6>Default</h6>
+           <pre><code>60000</code></pre></li>
+<li><h4>profileInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between the start of two CPU profiles. The first profile starts after one interval.</p>
+           <h6>Default</h6>
+           <pre><code>1200000</code></pre></li>
+<li><h4>profileDuration</h4>
+           <h6>Description</h6>
+           <p>Length of one CPU profile in milliseconds.</p>
+           <h6>Default</h6>
+           <pre><code>60000</code></pre></li>
+<li><h4>maxProfiles</h4>
+           <h6>Description</h6>
+           <p>Number of CPU profiles to write before profiling stops.</p>
+           <h6>Default</h6>
+           <pre><code>0</code></pre></li>
+<li><h4>database</h4>
+           <h6>Description</h6>
+           <p>Sequelize connector whose queries are timed. Leave empty to skip query timing.</p>
+           <h6>Default</h6>
+           <pre><code>sqlite</code></pre></li>
+<li><h4>slowQueryMs</h4>
+           <h6>Description</h6>
+           <p>Queries that take at least this many milliseconds are counted in the slow query summary.</p>
+           <h6>Default</h6>
+           <pre><code>200</code></pre></li>
+<li><h4>outputDir</h4>
+           <h6>Description</h6>
+           <p>Folder for the .cpuprofile files, relative to the SquadJS folder.</p>
+           <h6>Default</h6>
+           <pre><code>cpu-profiles</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordRoundWinner</summary>
           <h2>DiscordRoundWinner</h2>
           <p>The <code>DiscordRoundWinner</code> plugin will send the round winner to a Discord channel.</p>

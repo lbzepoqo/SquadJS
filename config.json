@@ -274,6 +274,17 @@
       "backupChannelID": ""
     },
     {
+      "plugin": "CpuProfiler",
+      "enabled": false,
+      "statsInterval": 60000,
+      "profileInterval": 1200000,
+      "profileDuration": 60000,
+      "maxProfiles": 0,
+      "database": "sqlite",
+      "slowQueryMs": 200,
+      "outputDir": "cpu-profiles"
+    },
+    {
       "plugin": "DiscordRoundWinner",
       "enabled": true,
       "discordClient": "discord",
