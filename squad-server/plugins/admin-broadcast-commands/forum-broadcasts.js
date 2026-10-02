@@ -1,4 +1,4 @@
-import { ChannelType } from 'discord.js';
+import { ChannelFlags, ChannelType } from 'discord.js';
 
 const IN_USE = '✅';
 const SKIPPED = '⚠️';
@@ -77,7 +77,10 @@ export default class ForumBroadcasts {
   // Returns { broadcasts, postCount }. Marks the message in use with ✅ and skipped posts with ⚠️.
   async load() {
     const forum = await this.fetchForum();
-    const posts = await this.fetchPosts(forum);
+    // The pinned post holds instructions for the admins, not a broadcast.
+    const posts = (await this.fetchPosts(forum)).filter(
+      (post) => !post.flags?.has?.(ChannelFlags.Pinned)
+    );
     posts.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
     const broadcasts = [];
