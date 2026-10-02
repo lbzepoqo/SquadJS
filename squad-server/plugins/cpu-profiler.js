@@ -1,15 +1,15 @@
-import fs from "fs";
-import path from "path";
-import inspector from "inspector";
-import asyncHooks from "async_hooks";
-import { performance } from "perf_hooks";
-import BasePlugin from "./base-plugin.js";
+import fs from 'fs';
+import path from 'path';
+import inspector from 'inspector';
+import asyncHooks from 'async_hooks';
+import { performance } from 'perf_hooks';
+import BasePlugin from './base-plugin.js';
 
 export default class CpuProfiler extends BasePlugin {
   static get description() {
     return (
-      "Diagnostics: logs the CPU use of the SquadJS process and the event loop utilization of the main thread, " +
-      "and writes CPU profiles of the main thread to disk."
+      'Diagnostics: logs the CPU use of the SquadJS process and the event loop utilization of the main thread, ' +
+      'and writes CPU profiles of the main thread to disk.'
     );
   }
 
@@ -21,44 +21,43 @@ export default class CpuProfiler extends BasePlugin {
     return {
       statsInterval: {
         required: false,
-        description: "Milliseconds between CPU and event loop log lines.",
-        default: 60000,
+        description: 'Milliseconds between CPU and event loop log lines.',
+        default: 60000
       },
       profileInterval: {
         required: false,
         description:
-          "Milliseconds between the start of two CPU profiles. The first profile starts after one interval.",
-        default: 1200000,
+          'Milliseconds between the start of two CPU profiles. The first profile starts after one interval.',
+        default: 1200000
       },
       profileDuration: {
         required: false,
-        description: "Length of one CPU profile in milliseconds.",
-        default: 60000,
+        description: 'Length of one CPU profile in milliseconds.',
+        default: 60000
       },
       maxProfiles: {
         required: false,
-        description: "Number of CPU profiles to write before profiling stops.",
-        default: 0,
+        description: 'Number of CPU profiles to write before profiling stops.',
+        default: 0
       },
       database: {
         required: false,
-        connector: "sequelize",
+        connector: 'sequelize',
         description:
-          "Sequelize connector whose queries are timed. Leave empty to skip query timing.",
-        default: "sqlite",
+          'Sequelize connector whose queries are timed. Leave empty to skip query timing.',
+        default: 'sqlite'
       },
       slowQueryMs: {
         required: false,
         description:
-          "Queries that take at least this many milliseconds are counted in the slow query summary.",
-        default: 200,
+          'Queries that take at least this many milliseconds are counted in the slow query summary.',
+        default: 200
       },
       outputDir: {
         required: false,
-        description:
-          "Folder for the .cpuprofile files, relative to the SquadJS folder.",
-        default: "cpu-profiles",
-      },
+        description: 'Folder for the .cpuprofile files, relative to the SquadJS folder.',
+        default: 'cpu-profiles'
+      }
     };
   }
 
@@ -80,20 +79,14 @@ export default class CpuProfiler extends BasePlugin {
     this.asyncHook = asyncHooks
       .createHook({
         init: (_asyncId, type) => {
-          this.asyncTypeCounts.set(
-            type,
-            (this.asyncTypeCounts.get(type) || 0) + 1
-          );
-        },
+          this.asyncTypeCounts.set(type, (this.asyncTypeCounts.get(type) || 0) + 1);
+        }
       })
       .enable();
     this.wrapDatabaseQuery();
     this.statsTimer = setInterval(this.logStats, this.options.statsInterval);
-    this.profileTimer = setInterval(
-      this.startProfile,
-      this.options.profileInterval
-    );
-    this.verbose(1, "Mounted.");
+    this.profileTimer = setInterval(this.startProfile, this.options.profileInterval);
+    this.verbose(1, 'Mounted.');
   }
 
   async unmount() {
@@ -112,7 +105,7 @@ export default class CpuProfiler extends BasePlugin {
     this.queryCount = 0;
     this.queryTotalMs = 0;
     const database = this.options.database;
-    if (!database || typeof database.query !== "function") return;
+    if (!database || typeof database.query !== 'function') return;
 
     const originalQuery = database.query.bind(database);
     database.query = async (sql, queryOptions) => {
@@ -124,9 +117,8 @@ export default class CpuProfiler extends BasePlugin {
         this.queryCount++;
         this.queryTotalMs += durationMs;
         if (durationMs >= this.options.slowQueryMs) {
-          const text =
-            typeof sql === "string" ? sql : sql?.query || String(sql);
-          const key = text.replace(/\s+/g, " ").trim().slice(0, 160);
+          const text = typeof sql === 'string' ? sql : sql?.query || String(sql);
+          const key = text.replace(/\s+/g, ' ').trim().slice(0, 160);
           const entry = this.queryStats.get(key) || { count: 0, totalMs: 0 };
           entry.count++;
           entry.totalMs += durationMs;
@@ -141,12 +133,9 @@ export default class CpuProfiler extends BasePlugin {
   readThreadTicks() {
     const ticks = new Map();
     try {
-      for (const threadID of fs.readdirSync("/proc/self/task")) {
-        const stat = fs.readFileSync(
-          `/proc/self/task/${threadID}/stat`,
-          "utf8"
-        );
-        const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      for (const threadID of fs.readdirSync('/proc/self/task')) {
+        const stat = fs.readFileSync(`/proc/self/task/${threadID}/stat`, 'utf8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
         ticks.set(threadID, Number(fields[11]) + Number(fields[12]));
       }
     } catch (error) {
@@ -159,21 +148,16 @@ export default class CpuProfiler extends BasePlugin {
     const now = performance.now();
     const cpuUsage = process.cpuUsage(this.lastCpuUsage);
     const elapsedMicroseconds = (now - this.lastTime) * 1000;
-    const processCpuPercent =
-      ((cpuUsage.user + cpuUsage.system) / elapsedMicroseconds) * 100;
-    const loopUtilization = performance.eventLoopUtilization(
-      this.lastLoopUtilization
-    );
+    const processCpuPercent = ((cpuUsage.user + cpuUsage.system) / elapsedMicroseconds) * 100;
+    const loopUtilization = performance.eventLoopUtilization(this.lastLoopUtilization);
     const memory = process.memoryUsage();
 
     this.verbose(
       1,
-      `Process CPU: ${processCpuPercent.toFixed(1)}% (user ${(
-        cpuUsage.user / 1000
-      ).toFixed(0)} ms, ` +
-        `system ${(cpuUsage.system / 1000).toFixed(
-          0
-        )} ms) | Main thread busy: ` +
+      `Process CPU: ${processCpuPercent.toFixed(1)}% (user ${(cpuUsage.user / 1000).toFixed(
+        0
+      )} ms, ` +
+        `system ${(cpuUsage.system / 1000).toFixed(0)} ms) | Main thread busy: ` +
         `${(loopUtilization.utilization * 100).toFixed(1)}% | Players: ${
           this.server.players.length
         } | ` +
@@ -188,22 +172,17 @@ export default class CpuProfiler extends BasePlugin {
     const busyThreads = [...threadTicks]
       .map(([threadID, ticks]) => [
         threadID,
-        ((ticks - (this.lastThreadTicks.get(threadID) || 0)) / elapsedTicks) *
-          100,
+        ((ticks - (this.lastThreadTicks.get(threadID) || 0)) / elapsedTicks) * 100
       ])
       .filter(([, percent]) => percent >= 1)
       .sort((first, second) => second[1] - first[1])
       .map(
         ([threadID, percent]) =>
-          `${threadID}${
-            threadID === String(process.pid) ? " (main)" : ""
-          } ${percent.toFixed(0)}%`
+          `${threadID}${threadID === String(process.pid) ? ' (main)' : ''} ${percent.toFixed(0)}%`
       );
     this.verbose(
       1,
-      `Threads: ${threadTicks.size} | Busy threads: ${
-        busyThreads.join(", ") || "none"
-      }`
+      `Threads: ${threadTicks.size} | Busy threads: ${busyThreads.join(', ') || 'none'}`
     );
     this.lastThreadTicks = threadTicks;
 
@@ -211,22 +190,19 @@ export default class CpuProfiler extends BasePlugin {
       .sort((first, second) => second[1] - first[1])
       .slice(0, 10)
       .map(([type, count]) => `${type} ${count}`);
-    this.verbose(1, `Async operations started: ${asyncTypes.join(", ")}`);
+    this.verbose(1, `Async operations started: ${asyncTypes.join(', ')}`);
     this.asyncTypeCounts.clear();
 
     const slowQueries = [...this.queryStats]
       .sort((first, second) => second[1].totalMs - first[1].totalMs)
       .slice(0, 5)
-      .map(
-        ([key, entry]) =>
-          `${entry.count}x ${Math.round(entry.totalMs)} ms: ${key}`
-      );
+      .map(([key, entry]) => `${entry.count}x ${Math.round(entry.totalMs)} ms: ${key}`);
     this.verbose(
       1,
       `Database: ${this.queryCount} queries, ${Math.round(
         this.queryTotalMs
       )} ms total | Slow queries: ${
-        slowQueries.length ? "\n  " + slowQueries.join("\n  ") : "none"
+        slowQueries.length ? '\n  ' + slowQueries.join('\n  ') : 'none'
       }`
     );
     this.queryStats.clear();
@@ -239,30 +215,24 @@ export default class CpuProfiler extends BasePlugin {
   }
 
   startProfile() {
-    if (this.session || this.profilesWritten >= this.options.maxProfiles)
-      return;
+    if (this.session || this.profilesWritten >= this.options.maxProfiles) return;
 
     this.session = new inspector.Session();
     this.session.connect();
-    this.session.post("Profiler.enable", () => {
-      this.session.post("Profiler.start", () => {
-        this.verbose(
-          1,
-          `CPU profile started (${this.server.players.length} players).`
-        );
+    this.session.post('Profiler.enable', () => {
+      this.session.post('Profiler.start', () => {
+        this.verbose(1, `CPU profile started (${this.server.players.length} players).`);
         setTimeout(() => this.stopProfile(), this.options.profileDuration);
       });
     });
   }
 
   stopProfile() {
-    this.session.post("Profiler.stop", (error, result) => {
+    this.session.post('Profiler.stop', (error, result) => {
       try {
         if (error) throw error;
         fs.mkdirSync(this.options.outputDir, { recursive: true });
-        const fileName = `squadjs-${new Date()
-          .toISOString()
-          .replace(/[:.]/g, "-")}.cpuprofile`;
+        const fileName = `squadjs-${new Date().toISOString().replace(/[:.]/g, '-')}.cpuprofile`;
         fs.writeFileSync(
           path.join(this.options.outputDir, fileName),
           JSON.stringify(result.profile)
