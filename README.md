@@ -1050,6 +1050,59 @@ Grafana:
         </details>
 
 <details>
+          <summary>ParserHealthCheck</summary>
+          <h2>ParserHealthCheck</h2>
+          <p>The <code>ParserHealthCheck</code> plugin compares the data that SquadJS parses with other sources and warns when they disagree for several checks in a row. A Squad update that changes a log line or an RCON response usually makes SquadJS lose data without an error, and this plugin makes that visible.<ul><li>ListPlayers: parsed players against the ShowServerInfo player count.</li><li>ShowServerInfo: player count is not a number.</li><li>Log parser: no parsed log event for a set time while the server has players.</li><li>Log parser: new players in ListPlayers without a parsed connect line.</li><li>Layers: the current layer is not in the layer list.</li></ul></p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>channelID</h4>
+           <h6>Description</h6>
+           <p>ID of the channel for warnings. When empty, warnings are only written to the log.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>checkInterval</h4>
+           <h6>Description</h6>
+           <p>Time between checks, in milliseconds.</p>
+           <h6>Default</h6>
+           <pre><code>60000</code></pre></li>
+<li><h4>consecutiveChecks</h4>
+           <h6>Description</h6>
+           <p>Number of failed checks in a row before a warning is sent.</p>
+           <h6>Default</h6>
+           <pre><code>3</code></pre></li>
+<li><h4>minimumPlayers</h4>
+           <h6>Description</h6>
+           <p>The ListPlayers and log activity checks run only when ShowServerInfo reports at least this many players.</p>
+           <h6>Default</h6>
+           <pre><code>10</code></pre></li>
+<li><h4>logActivityTimeout</h4>
+           <h6>Description</h6>
+           <p>Time without any parsed log event before the log activity check fails, in milliseconds. Squad can stop writing tick rate lines for 40 minutes or more, so all log events are counted.</p>
+           <h6>Default</h6>
+           <pre><code>900000</code></pre></li>
+<li><h4>connectGracePeriod</h4>
+           <h6>Description</h6>
+           <p>Time a new player may be in ListPlayers without a parsed connect line, in milliseconds.</p>
+           <h6>Default</h6>
+           <pre><code>120000</code></pre></li>
+<li><h4>minimumPlayersWithoutConnect</h4>
+           <h6>Description</h6>
+           <p>Number of new players without a parsed connect line before the check fails.</p>
+           <h6>Default</h6>
+           <pre><code>3</code></pre></li>
+<li><h4>checkCurrentLayer</h4>
+           <h6>Description</h6>
+           <p>Warn when the current layer is not in the SquadJS layer list. Turn this off when the layer list is known to be out of date for the current Squad version.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordAdminBroadcast</summary>
           <h2>DiscordAdminBroadcast</h2>
           <p>The <code>DiscordAdminBroadcast</code> plugin will send a copy of admin broadcasts made in game to a Discord channel.</p>

@@ -281,6 +281,19 @@
       "color": 16761867
     },
     {
+      "plugin": "ParserHealthCheck",
+      "enabled": false,
+      "discordClient": "discord",
+      "channelID": "",
+      "checkInterval": 60000,
+      "consecutiveChecks": 3,
+      "minimumPlayers": 10,
+      "logActivityTimeout": 900000,
+      "connectGracePeriod": 120000,
+      "minimumPlayersWithoutConnect": 3,
+      "checkCurrentLayer": true
+    },
+    {
       "plugin": "DiscordAdminBroadcast",
       "enabled": false,
       "discordClient": "discord",
