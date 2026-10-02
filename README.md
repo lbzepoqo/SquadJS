@@ -1005,7 +1005,7 @@ Grafana:
            <pre><code>false</code></pre></li>
 <li><h4>skipUnchanged</h4>
            <h6>Description</h6>
-           <p>Whether to skip writing the file if the content hash has not changed since the last sync.</p>
+           <p>Whether to skip writing the file if the permissions of every admin ID are the same as at the last sync. Comments and group names are ignored.</p>
            <h6>Default</h6>
            <pre><code>true</code></pre></li>
 <li><h4>backupToDiscord</h4>
