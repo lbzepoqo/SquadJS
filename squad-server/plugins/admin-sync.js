@@ -61,7 +61,7 @@ export default class AdminSync extends BasePlugin {
       skipUnchanged: {
         required: false,
         description:
-          'Whether to skip writing the file if the content hash has not changed since the last sync.',
+          'Whether to skip writing the file if the permissions of every admin ID are the same as at the last sync. Comments and group names are ignored.',
         default: true
       },
       backupToDiscord: {
@@ -619,12 +619,41 @@ export default class AdminSync extends BasePlugin {
   }
 
   /**
-   * Computes an MD5 hash of the given content.
-   * @param {string} content - The content to hash
+   * Computes an MD5 hash of the permissions each admin ID gets from the given content.
+   * Comments and group names are not part of the hash: the Whitelister output has a
+   * "Last update" comment and a randomly named group that change on every fetch.
+   * @param {string} content - The admin data content
    * @returns {string} The MD5 hash in hex format
    */
   computeContentHash(content) {
-    return crypto.createHash('md5').update(content, 'utf8').digest('hex');
+    const groups = new Map();
+    const adminGroups = new Map();
+    for (const line of content.split('\n')) {
+      const withoutComment = line.replace(/\/\/.*$/, '').trim();
+      const groupMatch = withoutComment.match(/^Group=([^:]+):(.*)$/);
+      if (groupMatch) {
+        const permissions = groupMatch[2].split(',').map((permission) => permission.trim());
+        groups.set(groupMatch[1].trim(), permissions.filter(Boolean));
+        continue;
+      }
+      const adminMatch = withoutComment.match(/^Admin=([^:]+):(\S+)$/);
+      if (adminMatch) {
+        const groupNames = adminGroups.get(adminMatch[1]) || [];
+        groupNames.push(adminMatch[2]);
+        adminGroups.set(adminMatch[1], groupNames);
+      }
+    }
+    const canonicalLines = [...adminGroups]
+      .map(([id, groupNames]) => {
+        const permissions = new Set();
+        for (const groupName of groupNames) {
+          const groupPermissions = groups.get(groupName) || [`undefined-group:${groupName}`];
+          groupPermissions.forEach((permission) => permissions.add(permission));
+        }
+        return `${id}:${[...permissions].sort().join(',')}`;
+      })
+      .sort();
+    return crypto.createHash('md5').update(canonicalLines.join('\n'), 'utf8').digest('hex');
   }
 
   /**
