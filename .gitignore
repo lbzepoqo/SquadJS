@@ -24,5 +24,6 @@ config_active*.json
 squadjs-logs/
 rcon-recordings/
 cpu-profiles/
+replay-output/
 data/
 squad-server/MySquadStats_Data/
