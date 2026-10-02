@@ -1631,7 +1631,7 @@ Grafana:
 <details>
           <summary>RconRecorder</summary>
           <h2>RconRecorder</h2>
-          <p>The <code>RconRecorder</code> plugin records every RCON command that SquadJS sends with its response, the messages the server pushes over RCON, and optionally every game log line that SquadJS reads. It writes one JSON line per entry into one file per UTC hour, compresses finished hours with gzip, and deletes old files by age and total size. It sends no extra RCON commands.</p>
+          <p>The <code>RconRecorder</code> plugin records every RCON command that SquadJS sends with its response, the messages the server pushes over RCON, and optionally every game log line that SquadJS reads. It writes one JSON line per entry into one file per UTC hour, compresses finished hours with gzip, and deletes old files by age and total size. A response that equals the previous response of the same command is written as <code>"same": true</code>. It sends no extra RCON commands.</p>
           <h3>Options</h3>
           <ul><li><h4>directory</h4>
            <h6>Description</h6>
