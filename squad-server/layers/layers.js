@@ -21,8 +21,10 @@ class Layers {
     this.layers = [];
 
     Logger.verbose('Layers', 1, 'Pulling layers...');
+    // SquadLayerList layers.old.json uses the same format as the Squad Wiki finished.json and
+    // covers more of the current server layers (Squad 10.6: 21 of 233 missing, against 49).
     const response = await axios.get(
-      'https://raw.githubusercontent.com/Squad-Wiki/squad-wiki-pipeline-map-data/master/completed_output/_Current%20Version/finished.json'
+      'https://raw.githubusercontent.com/fantinodavide/SquadLayerList/refs/heads/main/layers.old.json'
     );
 
     for (const layer of response.data.Maps) {
