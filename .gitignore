@@ -22,5 +22,6 @@ config_active*.json
 *.sqlite*
 *.log
 squadjs-logs/
+rcon-recordings/
 data/
 squad-server/MySquadStats_Data/
