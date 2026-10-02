@@ -430,6 +430,14 @@
       "color": 16761867
     },
     {
+      "plugin": "RconRecorder",
+      "enabled": false,
+      "directory": "./rcon-recordings",
+      "recordLogLines": true,
+      "retentionDays": 14,
+      "maxTotalMB": 1024
+    },
+    {
       "plugin": "DiscordServerStatusExtended",
       "enabled": true,
       "discordClient": "discord",

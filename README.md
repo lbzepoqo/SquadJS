@@ -1587,6 +1587,33 @@ Grafana:
         </details>
 
 <details>
+          <summary>RconRecorder</summary>
+          <h2>RconRecorder</h2>
+          <p>The <code>RconRecorder</code> plugin records every RCON command that SquadJS sends with its response, the messages the server pushes over RCON, and optionally every game log line that SquadJS reads. It writes one JSON line per entry into one file per UTC hour, compresses finished hours with gzip, and deletes old files by age and total size. It sends no extra RCON commands.</p>
+          <h3>Options</h3>
+          <ul><li><h4>directory</h4>
+           <h6>Description</h6>
+           <p>Directory for the recordings, relative to the SquadJS directory.</p>
+           <h6>Default</h6>
+           <pre><code>./rcon-recordings</code></pre></li>
+<li><h4>recordLogLines</h4>
+           <h6>Description</h6>
+           <p>Also record every game log line that SquadJS reads.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>retentionDays</h4>
+           <h6>Description</h6>
+           <p>Files older than this number of days are deleted.</p>
+           <h6>Default</h6>
+           <pre><code>14</code></pre></li>
+<li><h4>maxTotalMB</h4>
+           <h6>Description</h6>
+           <p>Maximum total size of all recordings in MB. The oldest files are deleted first.</p>
+           <h6>Default</h6>
+           <pre><code>1024</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordServerStatusExtended</summary>
           <h2>DiscordServerStatusExtended</h2>
           <p>The <code>DiscordServerStatusExtended</code> plugin works like <code>DiscordServerStatus</code>. When the current layer is unknown, the bot status uses the layer that RCON reports.</p>
