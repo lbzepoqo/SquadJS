@@ -1568,7 +1568,7 @@ Grafana:
 <details>
           <summary>AdminBroadcastCommands</summary>
           <h2>AdminBroadcastCommands</h2>
-          <p>Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode. The broadcasts can be kept in a Discord forum channel: one post per broadcast, the post title is <code>Name | alias1, alias2</code>, and the newest message in the post that has text and does not start with <code>//</code> is the broadcast text. The pinned post is skipped, so it can hold instructions. Changes apply without a restart.</p>
+          <p>Handles admin chat commands for broadcasting preset messages with support for aliases, partial matching, and delay mode. The broadcasts can be kept in a Discord forum channel: one post per broadcast, the post title is <code>Name | alias1, alias2</code>, and the broadcast text is the newest reply that starts with <code>!set</code>, or else the first message of the post. Other replies are discussion. The pinned post is skipped, so it can hold instructions. Changes apply without a restart.</p>
           <h3>Options</h3>
           <ul><li><h4>commandPrefixes</h4>
            <h6>Description</h6>
