@@ -305,6 +305,8 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
           `Your **${durationMinutes} ${minuteUnit}** temporary reserve entry is saved. ` +
           'Squad acknowledged the config reload request.\n\n' +
           '**Wait 15-30 seconds, then rejoin.**\n' +
+          'Already in the queue? Leave the queue and join again. ' +
+          'Squad gives the reserve slot only to a new join request.\n' +
           'Still cannot connect? Restart your game client and try again.'
       },
       deferred: {
@@ -314,6 +316,8 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
           `Your **${durationMinutes} ${minuteUnit}** temporary reserve entry is saved in the admin ` +
           'list. The match has ended, so the server applies it when the next map starts.\n\n' +
           '**Rejoin after the new map has loaded.**\n' +
+          'Already in the queue? Leave the queue and join again after the new map has loaded. ' +
+          'Squad gives the reserve slot only to a new join request.\n' +
           'The expiry timer runs from the moment you disconnected.'
       },
       unconfirmed: {
