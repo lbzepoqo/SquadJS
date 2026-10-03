@@ -2200,11 +2200,9 @@ SquadJS pings the following data to the [SquadJS API](https://github.com/Team-Si
 * Squad server IP, query port, name & player count (including queue size).
 * SquadJS version.
 * Log reader mode, i.e. `tail` or `ftp`.
-* Plugin configuration.
+* Names of the enabled plugins.
 
 At this time, this cannot be disabled.
-
-Please note, plugin configurations do **not** and should **not** contain any sensitive information which allows us to collect this information. Any sensitive information, e.g. Discord login tokens, should be included in the `connectors` section of the config which is not sent to our API. It is important that developers of custom plugins maintain this approach to avoid submitting confidential information to our API.
 
 ## Versions and Releases
 Whilst installing SquadJS you may do the following to obtain slightly different versions:
