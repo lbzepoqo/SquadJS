@@ -56,6 +56,31 @@ function parseArguments(argv) {
   return options;
 }
 
+// Entries are written when a command finishes, so a slow command is written after entries that came later than
+// its start. A query in the replay is answered with the response of the latest command that started at or before
+// that time, so the entries are sorted by start time. At the same time, responses come first: SquadJS sends a
+// command in the same millisecond as the event that caused it (for example the player list update after a squad
+// is created). A command finishes at most REORDER_WINDOW_MS after its start (the RCON command timeout is 10 s).
+const REORDER_WINDOW_MS = 15000;
+const startOrder = (entry) => [Date.parse(entry.time), entry.type === 'rcon' ? 0 : 1];
+const isBefore = (first, second) => {
+  const [firstTime, firstRank] = startOrder(first);
+  const [secondTime, secondRank] = startOrder(second);
+  return firstTime < secondTime || (firstTime === secondTime && firstRank < secondRank);
+};
+
+async function* inStartOrder(entries) {
+  const pending = [];
+  for await (const entry of entries) {
+    let index = pending.length;
+    while (index > 0 && isBefore(entry, pending[index - 1])) index--;
+    pending.splice(index, 0, entry);
+    const safeBefore = Date.parse(entry.time) - REORDER_WINDOW_MS;
+    while (pending.length > 0 && Date.parse(pending[0].time) < safeBefore) yield pending.shift();
+  }
+  yield* pending;
+}
+
 function hostOf(target) {
   if (typeof target === 'string') return new URL(target).hostname;
   if (target instanceof URL) return target.hostname;
@@ -287,9 +312,8 @@ async function main() {
 
   const reader = server.logParser.logReader.reader;
   let lastTime = from.getTime();
-  for await (const entry of readEntries(files, { from, to })) {
-    // Entries are written when a command finishes, so their start times can be slightly out of order.
-    const time = Math.max(lastTime, Date.parse(entry.time));
+  for await (const entry of inStartOrder(readEntries(files, { from, to }))) {
+    const time = Date.parse(entry.time);
     await clock.tickAsync(time - clock.now);
     lastTime = time;
     counts.entries++;
