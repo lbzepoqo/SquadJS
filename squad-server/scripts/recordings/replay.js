@@ -15,6 +15,11 @@
 //   - RCON: List... and Show... commands are answered with the response recorded at that time. Every other command
 //     (AdminWarn, AdminKick, AdminBroadcast ...) is a plugin action: it is written to actions.jsonl and answered with
 //     an empty response. The actions of the live server in the same range are written to live-actions.jsonl.
+//   - The server information (public queue, player count) changes at the times of the recorded ShowServerInfo
+//     responses, as on the server, not on a timer of the replay.
+//   - Plugin timers start at --from. For plugins with timers (for example AutoKickUnassigned), set --from to the
+//     time the plugins were mounted on the server (after the "Watching" line in the SquadJS log), and replay each
+//     SquadJS restart separately, with the plugin code that ran at that time.
 //   - Recorded log lines and pushed RCON messages (chat, warns, squad created ...) are fed in at their time.
 //   - All network access is blocked, except the download of the layer list. Nothing is sent to Discord, RCON or
 //     any other service.
@@ -271,6 +276,10 @@ async function main() {
   await server.updatePlayerList();
   await server.updateLayerInformation();
   await server.updateA2SInformation();
+  // Only SquadServer sends ShowServerInfo, so every recorded ShowServerInfo is one of its updates. Its timer
+  // starts again after each response and drifts by the response time, so a timer in the replay runs at other
+  // times than on the server. The replay updates the server information at the recorded times instead.
+  clearTimeout(server.updateA2SInformationTimeout);
   // SquadLogParser loads its rules in watch(), which also starts the file reader that a replay does not use.
   await server.logParser.setupRules();
   server.logParser.parsingStatsInterval = setInterval(server.logParser.logStats, 60 * 1000);
@@ -286,7 +295,15 @@ async function main() {
     counts.entries++;
 
     if (entry.type === 'rcon') {
-      if (QUERY_COMMAND.test(entry.command)) {
+      if (entry.command === 'ShowServerInfo') {
+        // The server information changed on the server when the response arrived.
+        const response = entry.response;
+        setTimeout(async () => {
+          responses.set(entry.command, response);
+          await server.updateA2SInformation();
+          clearTimeout(server.updateA2SInformationTimeout);
+        }, Math.max(0, Date.parse(entry.time) + (entry.ms || 0) - clock.now));
+      } else if (QUERY_COMMAND.test(entry.command)) {
         responses.set(entry.command, entry.response);
       } else {
         increment(counts.liveActions, entry.command.split(' ')[0]);
