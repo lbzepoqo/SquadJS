@@ -81,7 +81,8 @@
       "roundStartDelay": 900,
       "ignoreAdmins": false,
       "ignoreWhitelist": false,
-      "onlyKickIfQueue": false
+      "onlyKickIfQueue": false,
+      "finalWarnings": []
     },
     {
       "plugin": "ChatCommands",
