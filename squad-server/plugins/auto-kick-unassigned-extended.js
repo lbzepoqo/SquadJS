@@ -35,6 +35,28 @@ export default class AutoKickUnassignedExtended extends AutoKickUnassigned {
     };
   }
 
+  constructor(server, options, connectors) {
+    super(server, options, connectors);
+
+    this.onPlayerDisconnected = this.onPlayerDisconnected.bind(this);
+  }
+
+  async mount() {
+    await super.mount();
+    this.server.on('PLAYER_DISCONNECTED', this.onPlayerDisconnected);
+  }
+
+  async unmount() {
+    this.server.removeListener('PLAYER_DISCONNECTED', this.onPlayerDisconnected);
+    await super.unmount();
+  }
+
+  async onPlayerDisconnected(info) {
+    // SquadServer removes the bare ID fields from this event; the ID is only on info.player.
+    const eosID = info.player?.eosID;
+    if (eosID && eosID in this.trackedPlayers) this.untrackPlayer(eosID);
+  }
+
   trackPlayer(info) {
     const tracker = super.trackPlayer(info);
 
@@ -70,7 +92,10 @@ export default class AutoKickUnassignedExtended extends AutoKickUnassigned {
       for (const eosID of Object.keys(this.trackedPlayers)) this.untrackPlayer(eosID);
       return;
     }
-    return super.updateTrackingList(forceUpdate);
+    await super.updateTrackingList(forceUpdate);
+    // The parent class removes players who left only every cleanUpFrequency (20 min). Doing it on every
+    // update stops warnings and kicks to players who are no longer on the server.
+    await this.clearDisconnectedPlayers();
   }
 
   async clearDisconnectedPlayers() {
