@@ -86,13 +86,15 @@ export default class AutoKickUnassignedExtended extends AutoKickUnassigned {
     super.untrackPlayer(eosID);
   }
 
-  async updateTrackingList(forceUpdate = false) {
+  async updateTrackingList() {
     if (this.options.onlyKickIfQueue && this.server.publicQueue === 0) {
       this.verbose(3, 'Update Tracking List? false (public queue is empty)');
       for (const eosID of Object.keys(this.trackedPlayers)) this.untrackPlayer(eosID);
       return;
     }
-    await super.updateTrackingList(forceUpdate);
+    // The server player list refreshes every 30 s. Without a refresh here, a player who left a few seconds
+    // ago is still listed as unassigned and is tracked again after PLAYER_DISCONNECTED untracked them.
+    await super.updateTrackingList(true);
     // The parent class removes players who left only every cleanUpFrequency (20 min). Doing it on every
     // update stops warnings and kicks to players who are no longer on the server.
     await this.clearDisconnectedPlayers();
