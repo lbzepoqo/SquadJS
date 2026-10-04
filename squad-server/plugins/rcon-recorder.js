@@ -119,28 +119,31 @@ export default class RconRecorder extends BasePlugin {
     const processChatPacket = rcon.processChatPacket;
     const recorder = this;
 
-    rcon.execute = async function (command) {
+    // Returns the original promise, which already has the failure handler from core/rcon.js. An async wrapper would
+    // return a new promise without a handler, so a failed command that nobody awaits would become an unhandled
+    // rejection again.
+    rcon.execute = function (command) {
       const start = new Date();
-      try {
-        const response = await execute.call(this, command);
-        recorder.write({
-          time: start.toISOString(),
-          type: 'rcon',
-          command,
-          ms: Date.now() - start.getTime(),
-          response
-        });
-        return response;
-      } catch (error) {
-        recorder.write({
-          time: start.toISOString(),
-          type: 'rcon-error',
-          command,
-          ms: Date.now() - start.getTime(),
-          error: error?.message || String(error)
-        });
-        throw error;
-      }
+      const promise = execute.call(this, command);
+      promise.then(
+        (response) =>
+          recorder.write({
+            time: start.toISOString(),
+            type: 'rcon',
+            command,
+            ms: Date.now() - start.getTime(),
+            response
+          }),
+        (error) =>
+          recorder.write({
+            time: start.toISOString(),
+            type: 'rcon-error',
+            command,
+            ms: Date.now() - start.getTime(),
+            error: error?.message || String(error)
+          })
+      );
+      return promise;
     };
 
     rcon.processChatPacket = function (decodedPacket) {
