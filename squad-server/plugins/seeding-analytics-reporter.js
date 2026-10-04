@@ -478,11 +478,8 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
         color: 0x95a5a6,
         description: configLines.join('\n')
       },
-      {
-        title: 'Seeding Phases Since the Last Report',
-        color: 0x3498db,
-        description: phaseLines.join('\n')
-      },
+      // A long gap between reports can list many phases, so they are split like the leaderboard.
+      ...chunkEmbeds('Seeding Phases Since the Last Report', phaseLines, 0x3498db),
       ...(stuckLines
         ? [
             {
@@ -501,27 +498,9 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       }
     ];
 
-    const allEmbeds = [...leaderboardEmbeds, ...summaryEmbeds];
-    const totalChars = allEmbeds.reduce(
-      (sum, embed) =>
-        sum +
-        (embed.title?.length ?? 0) +
-        (embed.description?.length ?? 0) +
-        (embed.footer?.text?.length ?? 0),
-      0
-    );
-
-    if (allEmbeds.length > 10 || totalChars > 5900) {
-      // Two messages when one would exceed the Discord limits (10 embeds, 6000 characters).
-      await this.sendDiscordMessage({ embeds: leaderboardEmbeds });
-      await this.sendDiscordMessage({ embeds: summaryEmbeds });
-      this.verbose(
-        1,
-        `Report split into 2 messages (${allEmbeds.length} embeds, ~${totalChars} chars).`
-      );
-    } else {
-      await this.sendDiscordMessage({ embeds: allEmbeds });
-    }
+    const messages = packEmbeds([...leaderboardEmbeds, ...summaryEmbeds]);
+    for (const embeds of messages) await this.sendDiscordMessage({ embeds });
+    if (messages.length > 1) this.verbose(1, `Report split into ${messages.length} messages.`);
 
     // Marked only after the report is posted, so a failed post reports these players again.
     for (const player of newStuck) {
@@ -593,6 +572,29 @@ function chunkEmbeds(title, lines, color, descriptionLimit = 3800) {
     embeds.push({ title, color, description: '—' });
   }
   return embeds;
+}
+
+// Discord accepts at most 10 embeds and 6000 characters per message. chunkEmbeds keeps every description
+// under 3800 characters, so each embed fits into a message of its own.
+function packEmbeds(embeds) {
+  const messages = [];
+  let current = [];
+  let currentCharacters = 0;
+  for (const embed of embeds) {
+    const characters =
+      (embed.title?.length ?? 0) +
+      (embed.description?.length ?? 0) +
+      (embed.footer?.text?.length ?? 0);
+    if (current.length === 10 || currentCharacters + characters > 5900) {
+      messages.push(current);
+      current = [];
+      currentCharacters = 0;
+    }
+    current.push(embed);
+    currentCharacters += characters;
+  }
+  if (current.length > 0) messages.push(current);
+  return messages;
 }
 
 function trackerFingerprint(tracker) {
