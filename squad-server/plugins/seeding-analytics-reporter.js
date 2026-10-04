@@ -404,7 +404,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
           `reward_needed_time: **${formatDuration(
             config.reward_needed_time
           )}** (${resolveRewardThreshold(config)}pts threshold)`,
-          `time_deduction: **${safeConfigDisplay(config.time_deduction)}**/min`,
+          `time_deduction: **${formatDeduction(config.time_deduction)}**`,
           `minimum_reward_duration: **${
             formatDuration(config.minimum_reward_duration) ?? 'not set'
           }**`,
@@ -606,14 +606,20 @@ function resolveRewardThreshold(config) {
   return isNaN(n) ? 120 : n;
 }
 
-function formatDuration(val) {
-  if (val === null || val === undefined) return null;
-  if (typeof val !== 'object') return String(val);
-  if (typeof val.value === 'number' && typeof val.option === 'number') {
-    const minutes = val.value * (val.option / 60000);
-    return `${val.value}h (${minutes}min)`;
-  }
-  return safeConfigDisplay(val);
+// Whitelister durations are { value, option } with option in milliseconds, for example { value: 2, option: 3600000 }.
+function formatDuration(field) {
+  const ms = durationToMs(field);
+  if (ms === null) return field === null || field === undefined ? null : safeConfigDisplay(field);
+  const minutes = ms / 60000;
+  return minutes % 60 === 0 ? `${minutes / 60}h (${minutes}min)` : `${minutes}min`;
+}
+
+// The Whitelister deducts value points per minute (point_minute) or value percent of the reward threshold
+// per minute (perc_minute).
+function formatDeduction(field) {
+  if (field?.option === 'point_minute') return `${field.value} points/min`;
+  if (field?.option === 'perc_minute') return `${field.value}% of the threshold/min`;
+  return safeConfigDisplay(field);
 }
 
 function safeConfigNum(val, fallback = null) {
