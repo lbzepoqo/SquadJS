@@ -10,6 +10,7 @@ const MAX_SNAPSHOTS = 14;
 // Enough for recommendationWindowDays: with a start count of 1, a single player at night opens a phase.
 const MAX_PHASES = 200;
 const TRACKER_RESUME_MS = 10 * 60 * 1000;
+const TRACKER_SAVE_INTERVAL_MS = 5 * 60 * 1000;
 const CATCH_UP_DELAY_MS = 60 * 1000;
 
 function emptyState() {
@@ -87,6 +88,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.catchUpTimer = null;
 
     this.tracker = null;
+    this.lastTrackerSaveAt = 0;
     this.phaseLiveConfig = null;
 
     this.boundOnUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
@@ -137,9 +139,12 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.saveDebounceTimer = setTimeout(() => this.saveState(), SAVE_DEBOUNCE_MS);
   }
 
+  // Written to a temporary file and renamed, so a restart during the write cannot leave a broken state file.
   async saveState() {
+    const temporaryFile = `${this.options.dataFile}.tmp`;
     try {
-      await fs.writeFile(this.options.dataFile, JSON.stringify(this.state, null, 2), 'utf8');
+      await fs.writeFile(temporaryFile, JSON.stringify(this.state, null, 2), 'utf8');
+      await fs.rename(temporaryFile, this.options.dataFile);
     } catch (error) {
       this.verbose(1, `Error saving state: ${error.message}`);
     }
@@ -206,9 +211,18 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     const liveThreshold = Number(this.phaseLiveConfig.seeding_player_threshold);
     if (!liveThreshold) return;
 
+    const trackerBefore = trackerFingerprint(this.tracker);
     await this.advanceTracker(count, now, startThreshold, liveThreshold);
     this.tracker.updatedAt = now;
-    this.scheduleSave();
+    // The state file is saved when the tracker changes, and at least every TRACKER_SAVE_INTERVAL_MS so a
+    // restart finds a recent updatedAt.
+    if (
+      trackerFingerprint(this.tracker) !== trackerBefore ||
+      now - this.lastTrackerSaveAt >= TRACKER_SAVE_INTERVAL_MS
+    ) {
+      this.lastTrackerSaveAt = now;
+      this.scheduleSave();
+    }
   }
 
   async advanceTracker(count, now, startThreshold, liveThreshold) {
@@ -579,6 +593,10 @@ function chunkEmbeds(title, lines, color, descriptionLimit = 3800) {
     embeds.push({ title, color, description: '—' });
   }
   return embeds;
+}
+
+function trackerFingerprint(tracker) {
+  return JSON.stringify({ ...tracker, updatedAt: null });
 }
 
 function msUntilHourUTC(hourUTC) {
