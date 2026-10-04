@@ -51,7 +51,8 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       },
       leaderboardSize: {
         required: false,
-        description: 'Number of top seeders to show in the leaderboard.',
+        description:
+          'Number of players in the leaderboard, ranked by seeding points gained since the previous report.',
         default: 10
       },
       recommendationWindowDays: {
@@ -106,6 +107,8 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.resumeTracker();
     this.server.on('UPDATED_PLAYER_INFORMATION', this.boundOnUpdatedPlayerInfo);
     this.scheduleReport();
+    // The leaderboard compares with the previous snapshot, so the first report needs one to start from.
+    if (this.state.snapshots.length === 0) this.takeBaselineSnapshot();
   }
 
   async unmount() {
@@ -349,18 +352,36 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       [players, config] = await Promise.all([this.fetchPlayers(), this.fetchConfig()]);
     } catch (error) {
       this.verbose(1, `Snapshot fetch failed: ${error.message}`);
-      return { players: null, config: null, newStuck: [] };
+      return { players: null, config: null, newStuck: [], previousSnapshot: null };
     }
     this.verbose(2, `Raw config: ${JSON.stringify(config)}`);
 
+    const previousSnapshot = this.state.snapshots.at(-1) ?? null;
     const newStuck = detectStuck(
       players,
-      this.state.snapshots.at(-1),
+      previousSnapshot,
       this.state.alertedStuck,
       config,
       this.state.phases
     );
 
+    this.recordSnapshot(players);
+    this.verbose(1, `Snapshot taken: ${players.length} players, ${newStuck.length} new stuck.`);
+    return { players, config, newStuck, previousSnapshot };
+  }
+
+  async takeBaselineSnapshot() {
+    try {
+      const players = await this.fetchPlayers();
+      if (this.state.snapshots.length > 0) return;
+      this.recordSnapshot(players);
+      this.verbose(1, `Baseline snapshot taken: ${players.length} players.`);
+    } catch (error) {
+      this.verbose(1, `Baseline snapshot failed: ${error.message}`);
+    }
+  }
+
+  recordSnapshot(players) {
     this.state.snapshots.push({
       ts: new Date().toISOString(),
       players: players.map((player) => ({
@@ -373,10 +394,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     if (this.state.snapshots.length > MAX_SNAPSHOTS) {
       this.state.snapshots = this.state.snapshots.slice(-MAX_SNAPSHOTS);
     }
-
     this.scheduleSave();
-    this.verbose(1, `Snapshot taken: ${players.length} players, ${newStuck.length} new stuck.`);
-    return { players, config, newStuck };
   }
 
   async buildAndPostReport() {
@@ -386,24 +404,18 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       return;
     }
 
-    const { players, config, newStuck } = await this.takeSnapshot();
+    const { players, config, newStuck, previousSnapshot } = await this.takeSnapshot();
 
     const today = new Date().toISOString().slice(0, 10);
     const requiredPoints = resolveRewardThreshold(config);
 
     const leaderboardLines = players
-      ? [...players]
-          .sort((first, second) => second.seeding_points - first.seeding_points)
-          .slice(0, this.options.leaderboardSize)
-          .map((player, index) => {
-            const percent = Math.round((player.seeding_points / requiredPoints) * 100);
-            const lastActive = player.latest_seeding_activity
-              ? `<t:${Math.floor(new Date(player.latest_seeding_activity).getTime() / 1000)}:R>`
-              : 'never';
-            return `**${index + 1}.** ${
-              player.username ?? player.steamid64
-            } — ${player.seeding_points.toFixed(1)}pts (${percent}%) · ${lastActive}`;
-          })
+      ? buildLeaderboardLines(
+          players,
+          previousSnapshot,
+          requiredPoints,
+          this.options.leaderboardSize
+        )
       : ['Could not fetch player data.'];
 
     const configLines = config
@@ -467,7 +479,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       recommendations.length > 0 ? recommendations : ['✅ Config matches observed pattern.'];
 
     const leaderboardEmbeds = chunkEmbeds(
-      `Top ${this.options.leaderboardSize} Seeders — ${today} UTC`,
+      `Top ${this.options.leaderboardSize} Seeders Since the Last Report (${today} UTC)`,
       leaderboardLines.length ? leaderboardLines : ['No data.'],
       0xf1c40f
     );
@@ -595,6 +607,38 @@ function packEmbeds(embeds) {
   }
   if (current.length > 0) messages.push(current);
   return messages;
+}
+
+// Ranks by points gained since the previous snapshot. Banked points have no upper limit, so a ranking by
+// total points shows the same players every day, also players who stopped seeding weeks ago. A player who
+// is not in the previous snapshot had fewer than 1 point then. The gain is net of deductions.
+function buildLeaderboardLines(players, previousSnapshot, requiredPoints, size) {
+  if (!previousSnapshot)
+    return ['No previous snapshot yet. The next report shows the points gained.'];
+
+  const previousPoints = new Map(
+    previousSnapshot.players.map((player) => [player.steamid64, player.seeding_points])
+  );
+  const ranked = players
+    .map((player) => ({
+      player,
+      gained: player.seeding_points - (previousPoints.get(player.steamid64) ?? 0)
+    }))
+    .filter((entry) => entry.gained > 0)
+    .sort((first, second) => second.gained - first.gained)
+    .slice(0, size);
+  if (ranked.length === 0) return ['No player gained seeding points since the last report.'];
+
+  const since = Math.floor(Date.parse(previousSnapshot.ts) / 1000);
+  return [
+    `Points gained since <t:${since}:f>:`,
+    ...ranked.map(({ player, gained }, index) => {
+      const percent = Math.round((player.seeding_points / requiredPoints) * 100);
+      return `**${index + 1}.** ${player.username ?? player.steamid64} — +${gained.toFixed(
+        1
+      )}pts · total ${player.seeding_points.toFixed(1)}pts (${percent}%)`;
+    })
+  ];
 }
 
 function trackerFingerprint(tracker) {
