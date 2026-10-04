@@ -8,6 +8,7 @@ const API_TIMEOUT_MS = 10000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_SNAPSHOTS = 14;
 const MAX_PHASES = 30;
+const TRACKER_RESUME_MS = 10 * 60 * 1000;
 
 function emptyState() {
   return { snapshots: [], phases: [], alertedStuck: [], lastReportTs: null };
@@ -69,7 +70,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       phaseAbortGraceMinutes: {
         required: false,
         description:
-          'Minutes below seeding_start_player_count before a phase is considered aborted.',
+          'Minutes the player count must stay below seeding_start_player_count before a seeding phase counts as aborted, or a live server counts as empty.',
         default: 5
       }
     };
@@ -82,13 +83,8 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.reportTimer = null;
     this.reportInterval = null;
 
-    // Phase tracker
-    this.phaseStatus = 'idle'; // 'idle' | 'seeding'
-    this.phaseStart = null;
-    this.phasePeak = 0;
-    this.phaseUniqueSeeders = new Set();
+    this.tracker = null;
     this.phaseLiveConfig = null;
-    this.abortGraceTimer = null;
 
     this.boundOnUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
   }
@@ -102,6 +98,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   }
 
   async mount() {
+    this.resumeTracker();
     this.server.on('UPDATED_PLAYER_INFORMATION', this.boundOnUpdatedPlayerInfo);
     this.scheduleReport();
   }
@@ -111,7 +108,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
     if (this.reportTimer) clearTimeout(this.reportTimer);
     if (this.reportInterval) clearInterval(this.reportInterval);
-    if (this.abortGraceTimer) clearTimeout(this.abortGraceTimer);
     // flush any pending save
     if (this.saveDebounceTimer) await this.saveState();
   }
@@ -188,8 +184,14 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
   // ─── Phase Tracker ───────────────────────────────────────────────────────────
 
+  // The tracker follows the Whitelister's seeding tracker, which counts seeding while
+  // seeding_start_player_count <= players <= seeding_player_threshold. A phase starts when the server enters
+  // that range from idle, and ends as "live" above the threshold or as "aborted" when the count stays below the
+  // start count for phaseAbortGraceMinutes. A live server returns to idle only when it empties the same way,
+  // so a dip below the threshold or an evening decline does not start a new phase.
   async onUpdatedPlayerInfo() {
     const count = this.server.players.length;
+    const now = Date.now();
 
     if (!this.phaseLiveConfig) {
       try {
@@ -199,65 +201,117 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       }
     }
 
-    const startThreshold = Number(this.phaseLiveConfig.seeding_start_player_count) || 10;
-    const liveThreshold = Number(this.phaseLiveConfig.seeding_player_threshold) || 40;
+    const startThreshold = Number(this.phaseLiveConfig.seeding_start_player_count) || 2;
+    const liveThreshold = Number(this.phaseLiveConfig.seeding_player_threshold);
+    if (!liveThreshold) return;
 
-    if (this.phaseStatus === 'idle') {
-      if (count >= startThreshold && count < liveThreshold) {
-        this.phaseStatus = 'seeding';
-        this.phaseStart = Date.now();
-        this.phasePeak = count;
-        this.phaseUniqueSeeders = new Set(this.server.players.map((p) => p.steamID));
-        // Refresh config at the start of each new phase
+    await this.advanceTracker(count, now, startThreshold, liveThreshold);
+    this.tracker.updatedAt = now;
+    this.scheduleSave();
+  }
+
+  async advanceTracker(count, now, startThreshold, liveThreshold) {
+    const tracker = this.tracker;
+
+    if (tracker.status === 'unknown') {
+      if (count > liveThreshold) tracker.status = 'live';
+      else if (count < startThreshold) tracker.status = 'idle';
+      return;
+    }
+
+    if (tracker.status === 'idle') {
+      if (count > liveThreshold) {
+        tracker.status = 'live';
+        this.verbose(1, `Server is live with ${count} players; no seeding phase recorded.`);
+      } else if (count >= startThreshold) {
+        Object.assign(tracker, {
+          status: 'seeding',
+          phaseStart: now,
+          phasePeak: count,
+          seeders: this.server.players.map((player) => player.steamID),
+          belowStartSince: null
+        });
+        // Refresh the config at the start of each phase.
         try {
           this.phaseLiveConfig = await this.fetchConfig();
         } catch {
-          // use previously cached config
+          // Keep the cached config.
         }
         this.verbose(1, `Seeding phase started with ${count} players.`);
       }
       return;
     }
 
-    // phaseStatus === 'seeding'
-    if (count > this.phasePeak) this.phasePeak = count;
-    for (const player of this.server.players) this.phaseUniqueSeeders.add(player.steamID);
+    if (count >= startThreshold) {
+      tracker.belowStartSince = null;
+    } else if (tracker.belowStartSince === null) {
+      tracker.belowStartSince = now;
+    }
+    const graceMs = this.options.phaseAbortGraceMinutes * 60 * 1000;
+    const emptiedAt =
+      tracker.belowStartSince !== null && now - tracker.belowStartSince >= graceMs
+        ? tracker.belowStartSince
+        : null;
 
-    if (count >= liveThreshold) {
-      this.commitPhase('live');
-    } else if (count < startThreshold) {
-      if (!this.abortGraceTimer) {
-        const graceMs = this.options.phaseAbortGraceMinutes * 60 * 1000;
-        this.abortGraceTimer = setTimeout(() => {
-          this.abortGraceTimer = null;
-          if (this.phaseStatus !== 'seeding') return;
-          const currentCount = this.server.players.length;
-          const currentStart = this.phaseLiveConfig?.seeding_start_player_count ?? 10;
-          if (currentCount < currentStart) this.commitPhase('aborted');
-        }, graceMs);
+    if (tracker.status === 'live') {
+      if (emptiedAt !== null) {
+        this.resetTracker();
+        this.verbose(1, 'Server emptied after being live.');
       }
-    } else {
-      // Recovered into seeding range — cancel pending abort
-      if (this.abortGraceTimer) {
-        clearTimeout(this.abortGraceTimer);
-        this.abortGraceTimer = null;
-      }
+      return;
+    }
+
+    // status 'seeding'
+    tracker.phasePeak = Math.max(tracker.phasePeak, count);
+    const seeders = new Set(tracker.seeders);
+    for (const player of this.server.players) seeders.add(player.steamID);
+    tracker.seeders = [...seeders];
+
+    if (count > liveThreshold) {
+      this.commitPhase('live', now);
+      this.tracker.status = 'live';
+    } else if (emptiedAt !== null) {
+      this.commitPhase('aborted', emptiedAt);
     }
   }
 
-  commitPhase(outcome) {
-    const endTs = Date.now();
-    const durationMs = endTs - this.phaseStart;
-    const date = new Date().toISOString().slice(0, 10);
+  resetTracker() {
+    this.tracker = {
+      status: 'idle',
+      phaseStart: null,
+      phasePeak: 0,
+      seeders: [],
+      belowStartSince: null,
+      updatedAt: null
+    };
+    this.state.tracker = this.tracker;
+  }
+
+  // A tracker saved shortly before a restart continues. Otherwise the status is unknown until the count is
+  // below the start count or above the threshold, so a phase whose start was missed is not recorded.
+  resumeTracker() {
+    const saved = this.state.tracker;
+    if (saved && saved.updatedAt && Date.now() - saved.updatedAt <= TRACKER_RESUME_MS) {
+      this.tracker = saved;
+      this.verbose(1, `Resumed phase tracker in status ${saved.status}.`);
+    } else {
+      this.resetTracker();
+      this.tracker.status = 'unknown';
+    }
+  }
+
+  commitPhase(outcome, endTime) {
+    const tracker = this.tracker;
+    const durationMs = endTime - tracker.phaseStart;
 
     this.state.phases.push({
-      date,
-      startTs: new Date(this.phaseStart).toISOString(),
-      endTs: new Date(endTs).toISOString(),
+      date: new Date(endTime).toISOString().slice(0, 10),
+      startTs: new Date(tracker.phaseStart).toISOString(),
+      endTs: new Date(endTime).toISOString(),
       outcome,
       durationMs,
-      peakCount: this.phasePeak,
-      uniqueSeederCount: this.phaseUniqueSeeders.size,
+      peakCount: tracker.phasePeak,
+      uniqueSeederCount: tracker.seeders.length,
       timeToLiveMs: outcome === 'live' ? durationMs : null
     });
 
@@ -265,23 +319,13 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       this.state.phases = this.state.phases.slice(-MAX_PHASES);
     }
 
-    this.phaseStatus = 'idle';
-    this.phaseStart = null;
-    this.phasePeak = 0;
-    this.phaseUniqueSeeders = new Set();
-
-    if (this.abortGraceTimer) {
-      clearTimeout(this.abortGraceTimer);
-      this.abortGraceTimer = null;
-    }
-
-    this.scheduleSave();
     this.verbose(
       1,
       `Seeding phase ended: ${outcome}, ${Math.round(durationMs / 60000)}min, peak ${
-        this.state.phases.at(-1).peakCount
-      }, ${this.state.phases.at(-1).uniqueSeederCount} seeders.`
+        tracker.phasePeak
+      }, ${tracker.seeders.length} seeders.`
     );
+    this.resetTracker();
   }
 
   // ─── Snapshot + Stuck Detection ──────────────────────────────────────────────
