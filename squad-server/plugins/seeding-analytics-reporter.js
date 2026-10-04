@@ -414,11 +414,13 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
         ]
       : ['Could not fetch config.'];
 
-    const yesterday = new Date(Date.now() - MS_PER_DAY).toISOString().slice(0, 10);
-    const yesterdayPhases = this.state.phases.filter((p) => p.date === yesterday);
+    // Phases that ended since the previous report, so a phase on the morning of the report day is included.
+    const reportedUntil =
+      this.state.lastReportTs ?? new Date(Date.now() - MS_PER_DAY).toISOString();
+    const recentPhases = this.state.phases.filter((phase) => phase.endTs > reportedUntil);
     const phaseLines =
-      yesterdayPhases.length > 0
-        ? yesterdayPhases.map((p) => {
+      recentPhases.length > 0
+        ? recentPhases.map((p) => {
             const startUnix = Math.floor(new Date(p.startTs).getTime() / 1000);
             const endUnix = Math.floor(new Date(p.endTs).getTime() / 1000);
             const dur = Math.round(p.durationMs / 60000);
@@ -428,7 +430,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
                 : 'aborted';
             return `<t:${startUnix}:t> → <t:${endUnix}:t> · ${dur}min · peak ${p.peakCount} · ${p.uniqueSeederCount} seeders · ${ttl}`;
           })
-        : ['No seeding phase recorded yesterday.'];
+        : ['No seeding phase since the last report.'];
 
     const stuckLines =
       newStuck.length > 0
@@ -465,7 +467,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
         description: configLines.join('\n')
       },
       {
-        title: "Yesterday's Seeding Phase",
+        title: 'Seeding Phases Since the Last Report',
         color: 0x3498db,
         description: phaseLines.join('\n')
       },
@@ -698,17 +700,18 @@ function buildRecommendations(config, windowPhases, allSnapshots, cutoff) {
   const requiredPoints = resolveRewardThreshold(config);
   const timeDed = safeConfigNum(config.time_deduction, null);
   const minRewardDuration = safeConfigNum(config.minimum_reward_duration, null);
-  const seedingStartCount = config.seeding_start_player_count ?? null;
+  const seedingStartCount = Number(config.seeding_start_player_count) || null;
 
-  const recentSnapshots = allSnapshots.filter((s) => s.ts >= cutoff);
+  // getPlayers returns every player with at least one point, also players who stopped seeding months ago,
+  // so the share counts only players who seeded inside the window.
   let pctReachingReward = null;
-  if (recentSnapshots.length >= 2) {
-    const latest = recentSnapshots.at(-1);
-    const total = latest.players.length;
-    if (total > 0) {
-      const qualified = latest.players.filter((p) => p.seeding_points >= requiredPoints).length;
-      pctReachingReward = qualified / total;
-    }
+  const latest = allSnapshots.at(-1);
+  const activePlayers = (latest?.players ?? []).filter(
+    (player) => player.latest_seeding_activity && player.latest_seeding_activity >= cutoff
+  );
+  if (activePlayers.length > 0) {
+    const qualified = activePlayers.filter((player) => player.seeding_points >= requiredPoints);
+    pctReachingReward = qualified.length / activePlayers.length;
   }
 
   if (avgDurationMs > 60 * 60 * 1000 && pctReachingReward !== null && pctReachingReward < 0.5) {
@@ -735,11 +738,11 @@ function buildRecommendations(config, windowPhases, allSnapshots, cutoff) {
       `🔺 **Raise \`reward_needed_time\`** — avg time-to-live ${Math.round(
         avgTimeToLiveMs / 60000
       )}min and ${Math.round(pctReachingReward * 100)}% already at threshold.` +
-        ` Current: ${requiredPoints} → Suggested: ${requiredPoints + 30}`
+        ` Current: ${requiredPoints}min → Suggested: ${requiredPoints + 30}min`
     );
   }
 
-  if (abortRate > 0.3 && seedingStartCount !== null) {
+  if (abortRate > 0.3 && seedingStartCount !== null && seedingStartCount > 1) {
     recommendations.push(
       `⚠️ **Lower \`seeding_start_player_count\`** — ${Math.round(
         abortRate * 100
