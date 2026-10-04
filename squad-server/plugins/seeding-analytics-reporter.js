@@ -9,6 +9,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_SNAPSHOTS = 14;
 const MAX_PHASES = 30;
 const TRACKER_RESUME_MS = 10 * 60 * 1000;
+const CATCH_UP_DELAY_MS = 60 * 1000;
 
 function emptyState() {
   return { snapshots: [], phases: [], alertedStuck: [], lastReportTs: null };
@@ -82,6 +83,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.saveDebounceTimer = null;
     this.reportTimer = null;
     this.reportInterval = null;
+    this.catchUpTimer = null;
 
     this.tracker = null;
     this.phaseLiveConfig = null;
@@ -108,6 +110,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
     if (this.reportTimer) clearTimeout(this.reportTimer);
     if (this.reportInterval) clearInterval(this.reportInterval);
+    if (this.catchUpTimer) clearTimeout(this.catchUpTimer);
     // flush any pending save
     if (this.saveDebounceTimer) await this.saveState();
   }
@@ -362,10 +365,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       this.state.snapshots = this.state.snapshots.slice(-MAX_SNAPSHOTS);
     }
 
-    for (const player of newStuck) {
-      this.state.alertedStuck.push(player.steamid64);
-    }
-
     this.scheduleSave();
     this.verbose(1, `Snapshot taken: ${players.length} players, ${newStuck.length} new stuck.`);
     return { players, config, newStuck };
@@ -374,6 +373,12 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   // ─── Discord Report ──────────────────────────────────────────────────────────
 
   async buildAndPostReport() {
+    // sendDiscordMessage returns without an error when the channel is missing.
+    if (!this.channel) {
+      this.verbose(1, 'Report skipped: the Discord channel is not available.');
+      return;
+    }
+
     const { players, config, newStuck } = await this.takeSnapshot();
 
     const today = new Date().toISOString().slice(0, 10);
@@ -501,6 +506,10 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       await this.sendDiscordMessage({ embeds: allEmbeds });
     }
 
+    // Marked only after the report is posted, so a failed post reports these players again.
+    for (const player of newStuck) {
+      this.state.alertedStuck.push(player.steamid64);
+    }
     this.state.lastReportTs = new Date().toISOString();
     this.scheduleSave();
     this.verbose(1, 'Daily seeding report posted.');
@@ -518,11 +527,23 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     );
     this.reportTimer = setTimeout(() => {
       this.reportTimer = null;
-      this.buildAndPostReport().catch((err) => this.verbose(1, `Report error: ${err.message}`));
-      this.reportInterval = setInterval(() => {
-        this.buildAndPostReport().catch((err) => this.verbose(1, `Report error: ${err.message}`));
-      }, MS_PER_DAY);
+      this.runReport();
+      this.reportInterval = setInterval(() => this.runReport(), MS_PER_DAY);
     }, msUntilNext);
+
+    // A restart over the report hour would skip that day's report.
+    const previousReportTime = Date.now() + msUntilNext - MS_PER_DAY;
+    if (this.state.lastReportTs && Date.parse(this.state.lastReportTs) < previousReportTime) {
+      this.verbose(1, 'The last scheduled report was missed; posting it after the start delay.');
+      this.catchUpTimer = setTimeout(() => {
+        this.catchUpTimer = null;
+        this.runReport();
+      }, CATCH_UP_DELAY_MS);
+    }
+  }
+
+  runReport() {
+    this.buildAndPostReport().catch((err) => this.verbose(1, `Report error: ${err.message}`));
   }
 }
 
