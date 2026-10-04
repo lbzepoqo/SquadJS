@@ -7,7 +7,8 @@ const SAVE_DEBOUNCE_MS = 2000;
 const API_TIMEOUT_MS = 10000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_SNAPSHOTS = 14;
-const MAX_PHASES = 30;
+// Enough for recommendationWindowDays: with a start count of 1, a single player at night opens a phase.
+const MAX_PHASES = 200;
 const TRACKER_RESUME_MS = 10 * 60 * 1000;
 const CATCH_UP_DELAY_MS = 60 * 1000;
 
@@ -21,7 +22,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   }
 
   static get defaultEnabled() {
-    return true;
+    return false;
   }
 
   static get optionsSpecification() {
@@ -44,7 +45,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       },
       reportHourUTC: {
         required: false,
-        description: 'UTC hour (0–23) at which to post the daily report.',
+        description: 'UTC hour (0 to 23) at which to post the daily report.',
         default: 12
       },
       leaderboardSize: {
@@ -65,7 +66,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       seedAlertedStuckFile: {
         required: false,
         description:
-          'Path to a JSON array of steamIDs already zeroed — prevents re-alerting on first run.',
+          'Path to a JSON array of Steam IDs that are already handled, so they are not reported as stuck on the first run.',
         default: null
       },
       phaseAbortGraceMinutes: {
@@ -107,20 +108,21 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
   async unmount() {
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.boundOnUpdatedPlayerInfo);
-    if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
     if (this.reportTimer) clearTimeout(this.reportTimer);
     if (this.reportInterval) clearInterval(this.reportInterval);
     if (this.catchUpTimer) clearTimeout(this.catchUpTimer);
-    // flush any pending save
-    if (this.saveDebounceTimer) await this.saveState();
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+      this.saveDebounceTimer = null;
+      await this.saveState();
+    }
   }
-
-  // ─── State Persistence ───────────────────────────────────────────────────────
 
   async loadState() {
     try {
       const raw = await fs.readFile(this.options.dataFile, 'utf8');
-      this.state = JSON.parse(raw);
+      // Keys missing in a file from an older version get their empty value.
+      this.state = { ...emptyState(), ...JSON.parse(raw) };
       this.verbose(1, `Loaded state from ${this.options.dataFile}`);
     } catch (error) {
       if (error.code !== 'ENOENT') {
@@ -149,7 +151,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       const steamIDs = JSON.parse(raw);
       if (!Array.isArray(steamIDs)) return;
       const existing = new Set(this.state.alertedStuck);
-      for (const id of steamIDs) existing.add(id);
+      for (const steamID of steamIDs) existing.add(steamID);
       this.state.alertedStuck = [...existing];
       this.scheduleSave();
       this.verbose(
@@ -162,8 +164,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       }
     }
   }
-
-  // ─── API ─────────────────────────────────────────────────────────────────────
 
   async apiGet(path) {
     const url = `${this.options.whitelisterApiUrl}${path}?apiKey=${this.options.whitelisterApiKey}`;
@@ -184,8 +184,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   fetchConfig() {
     return this.apiGet('/api/dbconfig/read/seeding_tracker');
   }
-
-  // ─── Phase Tracker ───────────────────────────────────────────────────────────
 
   // The tracker follows the Whitelister's seeding tracker, which counts seeding while
   // seeding_start_player_count <= players <= seeding_player_threshold. A phase starts when the server enters
@@ -331,8 +329,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.resetTracker();
   }
 
-  // ─── Snapshot + Stuck Detection ──────────────────────────────────────────────
-
   async takeSnapshot() {
     let players, config;
     try {
@@ -351,14 +347,13 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       this.state.phases
     );
 
-    const ts = new Date().toISOString();
     this.state.snapshots.push({
-      ts,
-      players: players.map((p) => ({
-        steamid64: p.steamid64,
-        username: p.username,
-        seeding_points: p.seeding_points,
-        latest_seeding_activity: p.latest_seeding_activity ?? null
+      ts: new Date().toISOString(),
+      players: players.map((player) => ({
+        steamid64: player.steamid64,
+        username: player.username,
+        seeding_points: player.seeding_points,
+        latest_seeding_activity: player.latest_seeding_activity ?? null
       }))
     });
     if (this.state.snapshots.length > MAX_SNAPSHOTS) {
@@ -369,8 +364,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.verbose(1, `Snapshot taken: ${players.length} players, ${newStuck.length} new stuck.`);
     return { players, config, newStuck };
   }
-
-  // ─── Discord Report ──────────────────────────────────────────────────────────
 
   async buildAndPostReport() {
     // sendDiscordMessage returns without an error when the channel is missing.
@@ -386,16 +379,16 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
     const leaderboardLines = players
       ? [...players]
-          .sort((a, b) => b.seeding_points - a.seeding_points)
+          .sort((first, second) => second.seeding_points - first.seeding_points)
           .slice(0, this.options.leaderboardSize)
-          .map((p, i) => {
-            const pct = Math.round((p.seeding_points / requiredPoints) * 100);
-            const lastActive = p.latest_seeding_activity
-              ? `<t:${Math.floor(new Date(p.latest_seeding_activity).getTime() / 1000)}:R>`
+          .map((player, index) => {
+            const percent = Math.round((player.seeding_points / requiredPoints) * 100);
+            const lastActive = player.latest_seeding_activity
+              ? `<t:${Math.floor(new Date(player.latest_seeding_activity).getTime() / 1000)}:R>`
               : 'never';
-            return `**${i + 1}.** ${p.username ?? p.steamid64} — ${p.seeding_points.toFixed(
-              1
-            )}pts (${pct}%) · ${lastActive}`;
+            return `**${index + 1}.** ${
+              player.username ?? player.steamid64
+            } — ${player.seeding_points.toFixed(1)}pts (${percent}%) · ${lastActive}`;
           })
       : ['Could not fetch player data.'];
 
@@ -420,15 +413,15 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     const recentPhases = this.state.phases.filter((phase) => phase.endTs > reportedUntil);
     const phaseLines =
       recentPhases.length > 0
-        ? recentPhases.map((p) => {
-            const startUnix = Math.floor(new Date(p.startTs).getTime() / 1000);
-            const endUnix = Math.floor(new Date(p.endTs).getTime() / 1000);
-            const dur = Math.round(p.durationMs / 60000);
-            const ttl =
-              p.timeToLiveMs != null
-                ? `${Math.round(p.timeToLiveMs / 60000)}min to live`
+        ? recentPhases.map((phase) => {
+            const startUnix = Math.floor(new Date(phase.startTs).getTime() / 1000);
+            const endUnix = Math.floor(new Date(phase.endTs).getTime() / 1000);
+            const durationMinutes = Math.round(phase.durationMs / 60000);
+            const outcomeText =
+              phase.timeToLiveMs != null
+                ? `${Math.round(phase.timeToLiveMs / 60000)}min to live`
                 : 'aborted';
-            return `<t:${startUnix}:t> → <t:${endUnix}:t> · ${dur}min · peak ${p.peakCount} · ${p.uniqueSeederCount} seeders · ${ttl}`;
+            return `<t:${startUnix}:t> → <t:${endUnix}:t> · ${durationMinutes}min · peak ${phase.peakCount} · ${phase.uniqueSeederCount} seeders · ${outcomeText}`;
           })
         : ['No seeding phase since the last report.'];
 
@@ -438,7 +431,12 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
             `${newStuck.length} new stuck player${newStuck.length !== 1 ? 's' : ''}:`,
             ...newStuck
               .slice(0, 10)
-              .map((p) => `• ${p.username ?? p.steamid64} — ${p.seeding_points.toFixed(1)}pts`),
+              .map(
+                (player) =>
+                  `• ${player.username ?? player.steamid64} — ${player.seeding_points.toFixed(
+                    1
+                  )}pts`
+              ),
             ...(newStuck.length > 10
               ? [`…and ${newStuck.length - 10} more — check ${this.options.dataFile}`]
               : [])
@@ -447,11 +445,11 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
     const windowDays = this.options.recommendationWindowDays;
     const cutoff = new Date(Date.now() - windowDays * MS_PER_DAY).toISOString();
-    const windowPhases = this.state.phases.filter((p) => p.startTs >= cutoff);
+    const windowPhases = this.state.phases.filter((phase) => phase.startTs >= cutoff);
     const recommendations = config
       ? buildRecommendations(config, windowPhases, this.state.snapshots, cutoff)
       : [];
-    const recLines =
+    const recommendationLines =
       recommendations.length > 0 ? recommendations : ['✅ Config matches observed pattern.'];
 
     const leaderboardEmbeds = chunkEmbeds(
@@ -483,7 +481,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
       {
         title: `Config Recommendations (${windowDays}-day window)`,
         color: recommendations.length > 0 ? 0xe67e22 : 0x2ecc71,
-        description: recLines.join('\n'),
+        description: recommendationLines.join('\n'),
         footer: { text: COPYRIGHT_MESSAGE },
         timestamp: new Date().toISOString()
       }
@@ -491,13 +489,16 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
     const allEmbeds = [...leaderboardEmbeds, ...summaryEmbeds];
     const totalChars = allEmbeds.reduce(
-      (sum, e) =>
-        sum + (e.title?.length ?? 0) + (e.description?.length ?? 0) + (e.footer?.text?.length ?? 0),
+      (sum, embed) =>
+        sum +
+        (embed.title?.length ?? 0) +
+        (embed.description?.length ?? 0) +
+        (embed.footer?.text?.length ?? 0),
       0
     );
 
     if (allEmbeds.length > 10 || totalChars > 5900) {
-      // Split into two messages when Discord limits would be hit
+      // Two messages when one would exceed the Discord limits (10 embeds, 6000 characters).
       await this.sendDiscordMessage({ embeds: leaderboardEmbeds });
       await this.sendDiscordMessage({ embeds: summaryEmbeds });
       this.verbose(
@@ -516,8 +517,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     this.scheduleSave();
     this.verbose(1, 'Daily seeding report posted.');
   }
-
-  // ─── Scheduler ───────────────────────────────────────────────────────────────
 
   scheduleReport() {
     const msUntilNext = msUntilHourUTC(this.options.reportHourUTC);
@@ -545,36 +544,35 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   }
 
   runReport() {
-    this.buildAndPostReport().catch((err) => this.verbose(1, `Report error: ${err.message}`));
+    this.buildAndPostReport().catch((error) => this.verbose(1, `Report error: ${error.message}`));
   }
 }
 
-// ─── Pure helpers ─────────────────────────────────────────────────────────────
-
-function chunkEmbeds(title, lines, color, descLimit = 3800) {
+function chunkEmbeds(title, lines, color, descriptionLimit = 3800) {
   const embeds = [];
-  let buf = '';
+  let buffer = '';
   let part = 0;
   for (const line of lines) {
-    const candidate = buf ? `${buf}\n${line}` : line;
-    const safeLine = line.length > descLimit ? `${line.slice(0, descLimit - 1)}…` : line;
-    if (candidate.length > descLimit && buf) {
+    const candidate = buffer ? `${buffer}\n${line}` : line;
+    const safeLine =
+      line.length > descriptionLimit ? `${line.slice(0, descriptionLimit - 1)}…` : line;
+    if (candidate.length > descriptionLimit && buffer) {
       embeds.push({
         title: part === 0 ? title : `${title} (cont. ${part + 1})`,
         color,
-        description: buf
+        description: buffer
       });
       part++;
-      buf = safeLine;
+      buffer = safeLine;
     } else {
-      buf = buf ? `${buf}\n${safeLine}` : safeLine;
+      buffer = buffer ? `${buffer}\n${safeLine}` : safeLine;
     }
   }
-  if (buf) {
+  if (buffer) {
     embeds.push({
       title: part === 0 ? title : `${title} (cont. ${part + 1})`,
       color,
-      description: buf
+      description: buffer
     });
   }
   if (embeds.length === 0) {
@@ -592,7 +590,8 @@ function msUntilHourUTC(hourUTC) {
   return target.getTime() - now.getTime();
 }
 
-// reward_needed_time: { value: 2, option: 3600000 } → 2h × (3600000ms / 60000) = 120pts threshold
+// reward_needed_time { value: 2, option: 3600000 } is 2 x 60 minutes, so the threshold is 120 points
+// (the Whitelister adds one point per seeding minute).
 function resolveRewardThreshold(config) {
   const field = config?.reward_needed_time;
   if (!field) return 120;
@@ -604,15 +603,17 @@ function resolveRewardThreshold(config) {
   ) {
     return field.value * (field.option / 60000);
   }
-  const n = Number(field);
-  return isNaN(n) ? 120 : n;
+  const threshold = Number(field);
+  return isNaN(threshold) ? 120 : threshold;
 }
 
 // Whitelister durations are { value, option } with option in milliseconds, for example { value: 2, option: 3600000 }.
 function formatDuration(field) {
-  const ms = durationToMs(field);
-  if (ms === null) return field === null || field === undefined ? null : safeConfigDisplay(field);
-  const minutes = ms / 60000;
+  const durationMs = durationToMs(field);
+  if (durationMs === null) {
+    return field === null || field === undefined ? null : safeConfigDisplay(field);
+  }
+  const minutes = durationMs / 60000;
   return minutes % 60 === 0 ? `${minutes / 60}h (${minutes}min)` : `${minutes}min`;
 }
 
@@ -624,23 +625,22 @@ function formatDeduction(field) {
   return safeConfigDisplay(field);
 }
 
-function safeConfigNum(val, fallback = null) {
-  if (val === null || val === undefined) return fallback;
-  if (typeof val === 'number') return val;
-  if (typeof val === 'object') {
-    const candidate = val.value ?? val.current ?? val.minutes ?? val.points ?? null;
-    const n = Number(candidate);
-    return isNaN(n) ? fallback : n;
-  }
-  const n = Number(val);
-  return isNaN(n) ? fallback : n;
+function safeConfigNum(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'number') return value;
+  const candidate =
+    typeof value === 'object'
+      ? value.value ?? value.current ?? value.minutes ?? value.points ?? null
+      : value;
+  const number = Number(candidate);
+  return isNaN(number) ? fallback : number;
 }
 
-function safeConfigDisplay(val) {
-  if (val === null || val === undefined) return null;
-  if (typeof val !== 'object') return String(val);
-  const n = safeConfigNum(val);
-  return n !== null ? String(n) : JSON.stringify(val);
+function safeConfigDisplay(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object') return String(value);
+  const number = safeConfigNum(value);
+  return number !== null ? String(number) : JSON.stringify(value);
 }
 
 // A rewarded player is stuck when the Whitelister stops deducting their points. In incremental mode it deducts
@@ -687,18 +687,19 @@ function buildRecommendations(config, windowPhases, allSnapshots, cutoff) {
 
   const recommendations = [];
   const totalPhases = windowPhases.length;
-  const abortedCount = windowPhases.filter((p) => p.outcome === 'aborted').length;
-  const livePhases = windowPhases.filter((p) => p.outcome === 'live');
+  const abortedCount = windowPhases.filter((phase) => phase.outcome === 'aborted').length;
+  const livePhases = windowPhases.filter((phase) => phase.outcome === 'live');
 
-  const avgDurationMs = windowPhases.reduce((sum, p) => sum + p.durationMs, 0) / totalPhases;
+  const avgDurationMs =
+    windowPhases.reduce((sum, phase) => sum + phase.durationMs, 0) / totalPhases;
   const avgTimeToLiveMs =
     livePhases.length > 0
-      ? livePhases.reduce((sum, p) => sum + p.timeToLiveMs, 0) / livePhases.length
+      ? livePhases.reduce((sum, phase) => sum + phase.timeToLiveMs, 0) / livePhases.length
       : null;
   const abortRate = abortedCount / totalPhases;
 
   const requiredPoints = resolveRewardThreshold(config);
-  const timeDed = safeConfigNum(config.time_deduction, null);
+  const timeDeduction = safeConfigNum(config.time_deduction, null);
   const minRewardDuration = safeConfigNum(config.minimum_reward_duration, null);
   const seedingStartCount = Number(config.seeding_start_player_count) || null;
 
@@ -715,15 +716,15 @@ function buildRecommendations(config, windowPhases, allSnapshots, cutoff) {
   }
 
   if (avgDurationMs > 60 * 60 * 1000 && pctReachingReward !== null && pctReachingReward < 0.5) {
-    // Two decimals so small decay values (e.g. 0.2) still produce a lower suggestion.
-    const suggested = timeDed != null ? Math.round(timeDed * 0.8 * 100) / 100 : null;
-    // Only recommend when the suggestion is genuinely lower than the current value.
-    if (suggested === null || suggested < timeDed) {
+    // Two decimals, so a small deduction such as 0.2 still gives a lower suggestion.
+    const suggested = timeDeduction != null ? Math.round(timeDeduction * 0.8 * 100) / 100 : null;
+    // Recommend only when the suggestion is lower than the current value.
+    if (suggested === null || suggested < timeDeduction) {
       recommendations.push(
         `🔻 **Lower \`time_deduction\`** — avg phase ${Math.round(
           avgDurationMs / 60000
         )}min but only ${Math.round(pctReachingReward * 100)}% reach reward.` +
-          (suggested !== null ? ` Current: ${timeDed} → Suggested: ${suggested}` : '')
+          (suggested !== null ? ` Current: ${timeDeduction} → Suggested: ${suggested}` : '')
       );
     }
   }
