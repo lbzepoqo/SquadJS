@@ -479,6 +479,63 @@ Join {{server.name}} and help us seed.</code></pre></li>
         </details>
 
 <details>
+          <summary>SeedingAnalyticsReporter</summary>
+          <h2>SeedingAnalyticsReporter</h2>
+          <p>Posts daily seeding analytics to Discord: leaderboard, stuck-player alerts, phase stats, and config recommendations.</p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>channelID (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord channel ID for daily reports.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>whitelisterApiUrl (Required)</h4>
+           <h6>Description</h6>
+           <p>Base URL of the Squad Whitelister API.</p>
+           <h6>Default</h6>
+           <pre><code>http://your-api-url.com</code></pre></li>
+<li><h4>whitelisterApiKey (Required)</h4>
+           <h6>Description</h6>
+           <p>API key for the Squad Whitelister.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>reportHourUTC</h4>
+           <h6>Description</h6>
+           <p>UTC hour (0 to 23) at which to post the daily report.</p>
+           <h6>Default</h6>
+           <pre><code>12</code></pre></li>
+<li><h4>leaderboardSize</h4>
+           <h6>Description</h6>
+           <p>Number of top seeders to show in the leaderboard.</p>
+           <h6>Default</h6>
+           <pre><code>10</code></pre></li>
+<li><h4>recommendationWindowDays</h4>
+           <h6>Description</h6>
+           <p>Rolling window of past days used for config recommendations.</p>
+           <h6>Default</h6>
+           <pre><code>7</code></pre></li>
+<li><h4>dataFile</h4>
+           <h6>Description</h6>
+           <p>Path to the JSON state file for persisting snapshots and phase history.</p>
+           <h6>Default</h6>
+           <pre><code>./seeding-analytics-state.json</code></pre></li>
+<li><h4>seedAlertedStuckFile</h4>
+           <h6>Description</h6>
+           <p>Path to a JSON array of Steam IDs that are already handled, so they are not reported as stuck on the first run.</p>
+           <h6>Default</h6>
+           <pre><code>null</code></pre></li>
+<li><h4>phaseAbortGraceMinutes</h4>
+           <h6>Description</h6>
+           <p>Minutes the player count must stay below seeding_start_player_count before a seeding phase counts as aborted, or a live server counts as empty.</p>
+           <h6>Default</h6>
+           <pre><code>5</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordKillFeed</summary>
           <h2>DiscordKillFeed</h2>
           <p>The <code>DiscordKillFeed</code> plugin logs all wounds and related information to a Discord channel for admins to review.</p>

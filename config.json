@@ -118,6 +118,20 @@
       "timeZone": "UTC"
     },
     {
+      "plugin": "SeedingAnalyticsReporter",
+      "enabled": false,
+      "discordClient": "discord",
+      "channelID": "",
+      "whitelisterApiUrl": "http://your-api-url.com",
+      "whitelisterApiKey": "",
+      "reportHourUTC": 12,
+      "leaderboardSize": 10,
+      "recommendationWindowDays": 7,
+      "dataFile": "./seeding-analytics-state.json",
+      "seedAlertedStuckFile": null,
+      "phaseAbortGraceMinutes": 5
+    },
+    {
       "plugin": "DiscordKillFeed",
       "enabled": false,
       "discordClient": "discord",
