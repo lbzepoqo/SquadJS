@@ -510,7 +510,7 @@ Join {{server.name}} and help us seed.</code></pre></li>
            <pre><code>12</code></pre></li>
 <li><h4>leaderboardSize</h4>
            <h6>Description</h6>
-           <p>Number of top seeders to show in the leaderboard.</p>
+           <p>Number of players in the leaderboard, ranked by seeding points gained since the previous report.</p>
            <h6>Default</h6>
            <pre><code>10</code></pre></li>
 <li><h4>recommendationWindowDays</h4>
