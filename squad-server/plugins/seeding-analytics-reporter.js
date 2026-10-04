@@ -340,12 +340,12 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     }
     this.verbose(2, `Raw config: ${JSON.stringify(config)}`);
 
-    const prevSnapshot = this.state.snapshots.at(-1);
     const newStuck = detectStuck(
       players,
-      prevSnapshot?.players ?? [],
+      this.state.snapshots.at(-1),
       this.state.alertedStuck,
-      config
+      config,
+      this.state.phases
     );
 
     const ts = new Date().toISOString();
@@ -614,22 +614,43 @@ function safeConfigDisplay(val) {
   return n !== null ? String(n) : JSON.stringify(val);
 }
 
-function detectStuck(currentPlayers, prevPlayers, alertedStuck, config) {
+// A rewarded player is stuck when the Whitelister stops deducting their points. In incremental mode it deducts
+// points during seeding from offline players whose latest_seeding_activity is older than
+// minimum_reward_duration. A null date never matches that filter, so such a player keeps the reward forever.
+// Otherwise a player is stuck when the points did not fall since the previous snapshot although a seeding phase
+// ran after the player's last activity plus minimum_reward_duration.
+function detectStuck(currentPlayers, previousSnapshot, alertedStuck, config, phases) {
+  if (config?.tracking_mode !== 'incremental') return [];
+
   const requiredPoints = resolveRewardThreshold(config);
+  const minimumRewardMs = durationToMs(config.minimum_reward_duration) ?? 0;
   const alerted = new Set(alertedStuck);
-  const prevByID = Object.fromEntries(prevPlayers.map((p) => [p.steamid64, p]));
+  const previousByID = new Map(
+    (previousSnapshot?.players ?? []).map((player) => [player.steamid64, player])
+  );
+  const previousTime = previousSnapshot ? Date.parse(previousSnapshot.ts) : null;
 
   return currentPlayers.filter((player) => {
-    if (player.seeding_points < requiredPoints) return false;
-    if (alerted.has(player.steamid64)) return false;
+    if (player.seeding_points < requiredPoints || alerted.has(player.steamid64)) return false;
 
     const activity = player.latest_seeding_activity ?? null;
-    const isNull = activity === null;
-    const prevActivity = prevByID[player.steamid64]?.latest_seeding_activity ?? null;
-    const isFrozen = !isNull && prevActivity !== null && prevActivity === activity;
+    if (activity === null) return true;
 
-    return isNull || isFrozen;
+    const previous = previousByID.get(player.steamid64);
+    if (!previous || previousTime === null) return false;
+    if (player.seeding_points < previous.seeding_points) return false;
+    if (activity !== previous.latest_seeding_activity) return false;
+
+    const deductionFrom = Math.max(previousTime, Date.parse(activity) + minimumRewardMs);
+    return phases.some((phase) => Date.parse(phase.endTs) > deductionFrom);
   });
+}
+
+function durationToMs(field) {
+  if (field && typeof field.value === 'number' && typeof field.option === 'number') {
+    return field.value * field.option;
+  }
+  return null;
 }
 
 function buildRecommendations(config, windowPhases, allSnapshots, cutoff) {
