@@ -60,7 +60,7 @@ export default class TeamRandomizer extends BasePlugin {
 
       await this.server.rcon.broadcast('Teams are being randomized, please wait.');
 
-      let team = '1';
+      let team = 1;
       let switched = 0;
 
       for (const player of players) {
@@ -72,7 +72,7 @@ export default class TeamRandomizer extends BasePlugin {
             this.verbose(1, `Failed to switch ${player.name}: ${error.message}`);
           }
         }
-        team = team === '1' ? '2' : '1';
+        team = team === 1 ? 2 : 1;
       }
 
       await this.server.rcon.warn(
