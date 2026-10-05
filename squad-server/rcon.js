@@ -154,7 +154,7 @@ export default class SquadRcon extends Rcon {
 
     for (const line of response.split('\n')) {
       const match = line.match(
-        /^ID: (?<playerID>\d+) \| Online IDs:([^|]+)\| Name: (?<name>.+) \| Team ID: (?<teamID>\d+|N\/A)(?: \| Party ID: #?(?<partyID>\d+|N\/A))? \| Squad ID: (?<squadID>\d+|N\/A) \| Is Leader: (?<isLeader>True|False) \| Role: (?<role>[^|\r\n]+)(?: \| Vehicle: (?<vehicle>[^\r\n]+))?\r?$/
+        /^ID: (?<playerID>\d+) \| Online IDs:([^|]+)\| Name: (?<name>.+) \| Team ID: (?<teamID>\d|N\/A)(?: \| Party ID: [^|]*?)? \| Squad ID: (?<squadID>\d+|N\/A) \| Is Leader: (?<isLeader>True|False) \| Role: (?<role>.+?)(?: \| Vehicle: .*)?$/
       );
       if (!match) continue;
 
@@ -163,12 +163,6 @@ export default class SquadRcon extends Rcon {
       data.isLeader = data.isLeader === 'True';
       data.teamID = data.teamID !== 'N/A' ? +data.teamID : null;
       data.squadID = data.squadID !== 'N/A' ? +data.squadID : null;
-      if (data.partyID !== undefined)
-        data.partyID = data.partyID !== 'N/A' ? +data.partyID : null;
-      else delete data.partyID;
-      if (data.vehicle !== undefined)
-        data.vehicle = data.vehicle !== 'N/A' ? data.vehicle : null;
-      else delete data.vehicle;
       iterateIDs(match[2]).forEach((platform, id) => {
         data[lowerID(platform)] = id;
       });
@@ -188,25 +182,18 @@ export default class SquadRcon extends Rcon {
     if (!responseSquad || responseSquad.length < 1) return [squads, tickets];
 
     for (const line of responseSquad.split('\n')) {
-      const tmatch = line.match(
-        /Team ID: (?<teamID>\d) \((?<unitName>.+)\) - Tickets: (?<tickets>\d+)/
+      const matchSide = line.match(
+        /^Team ID: (?<teamID>\d) \((?<unitName>.+)\) - Tickets: (?<tickets>\d+)/
       );
-      if (tmatch) {
-        // Since Squad 10.6 every team line has a ticket count, so the team is set here as well.
-        teamID = +tmatch.groups.teamID;
-        teamName = tmatch.groups.unitName;
-        tickets[teamID - 1] = +tmatch.groups.tickets;
+      if (matchSide) {
+        teamID = +matchSide.groups.teamID;
+        teamName = matchSide.groups.unitName;
+        tickets[teamID - 1] = +matchSide.groups.tickets;
         continue;
       }
-
       const match = line.match(
-        /ID: (?<squadID>\d+) \| Name: (?<squadName>.+) \| Size: (?<size>\d+) \| Locked: (?<locked>True|False) \| Creator Name: (?<creatorName>.+) \| Creator Online IDs:([^|]+)/
+        /^ID: (?<squadID>\d+) \| Name: (?<squadName>.+) \| Size: (?<size>\d+) \| Locked: (?<locked>True|False) \| Creator Name: (?<creatorName>.+) \| Creator Online IDs:([^|]+)/
       );
-      const matchSide = line.match(/Team ID: (\d) \((.+)\)/);
-      if (matchSide) {
-        teamID = +matchSide[1];
-        teamName = matchSide[2];
-      }
       if (!match) continue;
       match.groups.squadID = +match.groups.squadID;
       const squad = {

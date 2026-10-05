@@ -82,8 +82,8 @@
       "roundStartDelay": 900,
       "ignoreAdmins": false,
       "ignoreWhitelist": false,
-      "onlyKickIfQueue": false,
-      "finalWarnings": []
+      "finalWarnings": [],
+      "onlyKickIfQueue": false
     },
     {
       "plugin": "ChatCommands",
@@ -374,7 +374,8 @@
       "playerThreshold": 93,
       "roundStartDelay": 900,
       "ignoreAdmins": false,
-      "ignoreWhitelist": false
+      "ignoreWhitelist": false,
+      "finalWarnings": []
     },
     {
       "plugin": "DiscordDebug",

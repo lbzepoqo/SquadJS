@@ -241,7 +241,7 @@ export default class DBLog extends BasePlugin {
         charset: 'utf8mb4',
         collate: 'utf8mb4_unicode_ci',
         // The player columns reference DBLog_Players.steamID with ON UPDATE CASCADE. Without these
-        // indexes, every Player upsert scans this table once per foreign key.
+        // indexes, every Player upsert scans this table once per foreign key on SQLite.
         indexes: [
           {
             fields: ['match']
@@ -537,13 +537,13 @@ export default class DBLog extends BasePlugin {
   }
 
   async unmount() {
-    this.server.removeEventListener('TICK_RATE', this.onTickRate);
-    this.server.removeEventListener('UPDATED_A2S_INFORMATION', this.onTickRate);
-    this.server.removeEventListener('NEW_GAME', this.onNewGame);
-    this.server.removeEventListener('PLAYER_CONNECTED', this.onPlayerConnected);
-    this.server.removeEventListener('PLAYER_WOUNDED', this.onPlayerWounded);
-    this.server.removeEventListener('PLAYER_DIED', this.onPlayerDied);
-    this.server.removeEventListener('PLAYER_REVIVED', this.onPlayerRevived);
+    this.server.removeListener('TICK_RATE', this.onTickRate);
+    this.server.removeListener('UPDATED_A2S_INFORMATION', this.onTickRate);
+    this.server.removeListener('NEW_GAME', this.onNewGame);
+    this.server.removeListener('PLAYER_CONNECTED', this.onPlayerConnected);
+    this.server.removeListener('PLAYER_WOUNDED', this.onPlayerWounded);
+    this.server.removeListener('PLAYER_DIED', this.onPlayerDied);
+    this.server.removeListener('PLAYER_REVIVED', this.onPlayerRevived);
   }
 
   async onTickRate(info) {
@@ -743,6 +743,11 @@ export default class DBLog extends BasePlugin {
     try {
       const steamUsersCount = await this.models.SteamUser.count();
       const playersCount = await this.models.Player.count();
+
+      if (steamUsersCount === 0) {
+        this.verbose(1, `Skipping migration from SteamUsers to Players: there are no SteamUsers.`);
+        return;
+      }
 
       if (steamUsersCount < playersCount) {
         this.verbose(

@@ -340,11 +340,6 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <p><ul><li><code>true</code>: Reserve slot players will <b>NOT</b> be kicked</li><li><code>false</code>: Reserve slot players <b>WILL</b> be kicked</li></ul></p>
            <h6>Default</h6>
            <pre><code>false</code></pre></li>
-<li><h4>onlyKickIfQueue</h4>
-           <h6>Description</h6>
-           <p><ul><li><code>true</code>: Only warn and kick unassigned players if there's a public queue</li><li><code>false</code>: Always warn and kick unassigned players</li></ul></p>
-           <h6>Default</h6>
-           <pre><code>false</code></pre></li>
 <li><h4>finalWarnings</h4>
            <h6>Description</h6>
            <p>Extra warnings in the last seconds before the kick, as a list of seconds before the kick, for example <code>[15, 10, 5]</code>. They are sent in addition to the regular warnings.</p>
@@ -354,7 +349,12 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
   15,
   10,
   5
-]</code></pre></ul>
+]</code></pre>
+<li><h4>onlyKickIfQueue</h4>
+           <h6>Description</h6>
+           <p><ul><li><code>true</code>: Only warn and kick unassigned players if there's a public queue</li><li><code>false</code>: Always warn and kick unassigned players</li></ul></p>
+           <h6>Default</h6>
+           <pre><code>false</code></pre></li></ul>
         </details>
 
 <details>
@@ -1407,7 +1407,17 @@ Grafana:
            <h6>Description</h6>
            <p><ul><li><code>true</code>: Reserve slot players will <b>NOT</b> be kicked</li><li><code>false</code>: Reserve slot players <b>WILL</b> be kicked</li></ul></p>
            <h6>Default</h6>
-           <pre><code>false</code></pre></li></ul>
+           <pre><code>false</code></pre></li>
+<li><h4>finalWarnings</h4>
+           <h6>Description</h6>
+           <p>Extra warnings in the last seconds before the kick, as a list of seconds before the kick, for example <code>[15, 10, 5]</code>. They are sent in addition to the regular warnings.</p>
+           <h6>Default</h6>
+           <pre><code>[]</code></pre></li><h6>Example</h6>
+           <pre><code>[
+  15,
+  10,
+  5
+]</code></pre></ul>
         </details>
 
 <details>
