@@ -503,6 +503,12 @@ export default class DBLog extends BasePlugin {
     });
   }
 
+  getPlayerConflictFields(player) {
+    // Players from the Epic Games Store have no Steam ID. A NULL steamID never conflicts, so their upsert
+    // would insert a second row and fail on the unique eosID.
+    return player.steamID ? ['steamID'] : ['eosID'];
+  }
+
   async prepareToMount() {
     await this.models.Server.sync();
     await this.models.Match.sync();
@@ -591,7 +597,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.attacker.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.attacker)
         }
       );
     if (info.victim)
@@ -602,7 +608,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.victim.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.victim)
         }
       );
 
@@ -633,7 +639,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.attacker.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.attacker)
         }
       );
     if (info.victim)
@@ -644,7 +650,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.victim.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.victim)
         }
       );
 
@@ -676,7 +682,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.attacker.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.attacker)
         }
       );
     if (info.victim)
@@ -687,7 +693,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.victim.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.victim)
         }
       );
     if (info.reviver)
@@ -698,7 +704,7 @@ export default class DBLog extends BasePlugin {
           lastName: info.reviver.name
         },
         {
-          conflictFields: ['steamID']
+          conflictFields: this.getPlayerConflictFields(info.reviver)
         }
       );
 
@@ -734,7 +740,7 @@ export default class DBLog extends BasePlugin {
         lastIP: info.ip
       },
       {
-        conflictFields: ['steamID']
+        conflictFields: this.getPlayerConflictFields(info.player)
       }
     );
   }
