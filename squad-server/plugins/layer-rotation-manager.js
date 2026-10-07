@@ -174,7 +174,7 @@ export default class LayerRotationManager extends BasePlugin {
     await this.loadState();
 
     // Sanitize the layer voting file to ensure consistent comment formatting
-    await this.sanitizeLayerVotingFile();
+    let fileChanged = await this.sanitizeLayerVotingFile();
 
     // Check current game mode on mount and update layer voting file
     // This replaces the separate checkCurrentGameMode and updateLayerVotingFile calls
@@ -189,7 +189,7 @@ export default class LayerRotationManager extends BasePlugin {
           this.verbose(1, `Current game mode on mount: ${currentGameMode}`);
 
           // Update the layer voting file with the current game mode
-          await this.updateLayerVotingFile(currentGameMode);
+          if (await this.updateLayerVotingFile(currentGameMode)) fileChanged = true;
         } else {
           this.verbose(1, 'Could not determine game mode from layer name on mount.');
         }
@@ -200,13 +200,16 @@ export default class LayerRotationManager extends BasePlugin {
       this.verbose(1, `Error checking current game mode on mount: ${error.message}`);
     }
 
+    // The game reads LayerVoting.cfg only at map load and on AdminReloadServerConfig.
+    if (fileChanged) await this.reloadServerConfig();
+
     // Set up periodic check every 5 minutes
     this.checkIntervalId = setInterval(this.checkCurrentGameMode, 5 * 60 * 1000);
   }
 
   async unmount() {
     // Remove event listeners
-    this.server.removeEventListener('NEW_GAME', this.onNewGame);
+    this.server.removeListener('NEW_GAME', this.onNewGame);
 
     // Clear interval if it exists
     if (this.checkIntervalId) {
@@ -279,12 +282,11 @@ export default class LayerRotationManager extends BasePlugin {
   async onNewGame(info) {
     this.verbose(1, 'New game started, checking current layer...');
     try {
-      // Get current map information using getCurrentMap method
-      const currentMapInfo = await this.server.rcon.getCurrentMap();
-      // The layer is directly available from the getCurrentMap response
-      const currentLayer = currentMapInfo.layer;
+      // The event carries the layer from the log line, so no RCON round trip is needed.
+      // layerClassname covers layers that are missing from the SquadJS layer list.
+      const currentLayer = info?.layer?.layerid ?? info?.layerClassname;
       if (!currentLayer) {
-        this.verbose(1, 'Could not determine current layer from RCON response.');
+        this.verbose(1, 'Could not determine current layer from the NEW_GAME event.');
         return;
       }
       this.verbose(1, `Current layer: ${currentLayer}`);
@@ -365,11 +367,10 @@ export default class LayerRotationManager extends BasePlugin {
       this.lastGameMode = currentGameMode;
       // Save the updated state
       await this.saveState();
-      // Update the layer voting file
-      await this.updateLayerVotingFile(currentGameMode);
-      // Execute AdminReloadServerConfig command to reload the server configuration
-      await this.server.rcon.execute('AdminReloadServerConfig');
-      this.verbose(1, 'Executed AdminReloadServerConfig command to refresh server configuration.');
+      // The game already read the file at map load, so a reload is needed only after a change.
+      if (await this.updateLayerVotingFile(currentGameMode)) {
+        await this.reloadServerConfig();
+      }
       if (currentGameMode) {
         this.verbose(
           1,
@@ -520,6 +521,76 @@ export default class LayerRotationManager extends BasePlugin {
     return null;
   }
 
+  parseLayerVotingLine(line) {
+    const trimmedLine = line.trim();
+
+    // Empty lines and header comments (// NOTE, // LAYER_VOTING) are kept as they are.
+    if (
+      trimmedLine === '' ||
+      trimmedLine.startsWith('// NOTE') ||
+      trimmedLine.startsWith('// LAYER_VOTING')
+    ) {
+      return null;
+    }
+
+    // A layer line is commented as either '// LayerName' or '//LayerName'.
+    if (trimmedLine.startsWith('//')) {
+      return { isCommented: true, layerLine: trimmedLine.substring(2).trim() };
+    }
+    return { isCommented: false, layerLine: trimmedLine };
+  }
+
+  listOptionIncludes(optionName, value) {
+    return (this.options[optionName] || []).includes(value);
+  }
+
+  // Returns whether a layer should be enabled and why. enabled is null when no rule applies.
+  // Rule order follows the option descriptions: a specific layer rule beats a level rule,
+  // and a level rule beats a game mode rule.
+  getLayerRule(layerLine, currentGameMode) {
+    if (this.listOptionIncludes('alwaysEnabledLayers', layerLine)) {
+      return { enabled: true, reason: 'always enabled layer' };
+    }
+    if (this.listOptionIncludes('alwaysDisabledLayers', layerLine)) {
+      return { enabled: false, reason: 'always disabled layer' };
+    }
+
+    const levelName = this.extractLevelName(layerLine);
+    if (levelName && this.listOptionIncludes('alwaysEnabledLevels', levelName)) {
+      return { enabled: true, reason: `always enabled level: ${levelName}` };
+    }
+    if (levelName && this.listOptionIncludes('alwaysDisabledLevels', levelName)) {
+      return { enabled: false, reason: `always disabled level: ${levelName}` };
+    }
+
+    const layerGameMode = this.determineGameMode(layerLine);
+    if (!layerGameMode) {
+      return { enabled: null };
+    }
+    if (this.listOptionIncludes('alwaysEnabledGameModes', layerGameMode)) {
+      return { enabled: true, reason: `always enabled game mode: ${layerGameMode}` };
+    }
+    if (this.listOptionIncludes('alwaysDisabledGameModes', layerGameMode)) {
+      return { enabled: false, reason: `always disabled game mode: ${layerGameMode}` };
+    }
+    if (this.isGameModeTimeDisabled(layerGameMode)) {
+      return { enabled: false, reason: `${layerGameMode} disabled by time-based rule` };
+    }
+    if (
+      currentGameMode === 'Seed' &&
+      this.listOptionIncludes('disableModesInSeedMode', layerGameMode)
+    ) {
+      return { enabled: false, reason: `${layerGameMode} disabled during Seed mode` };
+    }
+
+    const skipCount = this.gameModeCounters[layerGameMode] || 0;
+    if (skipCount > 0) {
+      return { enabled: false, reason: `${layerGameMode}, skip count: ${skipCount}` };
+    }
+    return { enabled: true, reason: layerGameMode };
+  }
+
+  // Returns true when the file content changed, so the caller knows a config reload is needed.
   async updateLayerVotingFile(currentGameMode) {
     try {
       const filePath = this.options.layerVotingFilePath;
@@ -527,11 +598,10 @@ export default class LayerRotationManager extends BasePlugin {
       // Check if the file exists
       if (!fs.existsSync(filePath)) {
         this.verbose(1, `LayerVoting.cfg file not found at ${filePath}`);
-        return;
+        return false;
       }
 
-      // Read the current file content
-      const fileLines = fs.readFileSync(filePath, 'utf8').split('\n');
+      const originalContent = fs.readFileSync(filePath, 'utf8');
       const updatedLines = [];
 
       // Debug information
@@ -540,302 +610,78 @@ export default class LayerRotationManager extends BasePlugin {
         for (const [gameMode, count] of Object.entries(this.gameModeCounters)) {
           this.verbose(1, `  ${gameMode}: ${count}`);
         }
-      }
-
-      // Check if current game mode is Seed
-      const isSeedMode = currentGameMode === 'Seed';
-      if (this.options.debugMode) {
         this.verbose(1, `Current game mode: ${currentGameMode}`);
-        this.verbose(1, `Is Seed mode: ${isSeedMode}`);
+        this.verbose(1, `Is Seed mode: ${currentGameMode === 'Seed'}`);
         this.verbose(
           1,
           `Modes to disable in Seed: ${JSON.stringify(this.options.disableModesInSeedMode || [])}`
         );
       }
 
-      // Process each line
-      for (const line of fileLines) {
-        // Skip comment lines that are not layer lines (like // NOTE or // LAYER_VOTING)
-        if (line.trim().startsWith('// NOTE') || line.trim().startsWith('// LAYER_VOTING')) {
+      for (const line of originalContent.split('\n')) {
+        const parsedLine = this.parseLayerVotingLine(line);
+        if (!parsedLine) {
           updatedLines.push(line);
           continue;
         }
 
-        // Skip empty lines
-        if (line.trim() === '') {
-          updatedLines.push(line);
-          continue;
-        }
+        const { isCommented, layerLine } = parsedLine;
+        const { enabled, reason } = this.getLayerRule(layerLine, currentGameMode);
 
-        // Process layer lines (both commented and uncommented)
-        const trimmedLine = line.trim();
-        let isCommented = false;
-        let layerLine = trimmedLine;
-
-        // Check if the line is commented (either '// LayerName' or '//LayerName')
-        if (trimmedLine.startsWith('// ')) {
-          isCommented = true;
-          layerLine = trimmedLine.substring(3).trim();
-        } else if (trimmedLine.startsWith('//')) {
-          isCommented = true;
-          layerLine = trimmedLine.substring(2).trim();
-        }
-
-        // Always use consistent comment format with a space after //
-        const commentPrefix = '// ';
-
-        // Check if this layer is in the always enabled list - this overrides all other rules
-        if (
-          this.options.alwaysEnabledLayers &&
-          this.options.alwaysEnabledLayers.includes(layerLine)
-        ) {
-          // This layer should always be enabled
-          if (isCommented) {
-            updatedLines.push(layerLine);
-            if (this.options.debugMode) {
-              this.verbose(1, `Uncommenting layer: ${layerLine} (always enabled layer)`);
-            }
-          } else {
-            updatedLines.push(line);
+        if (enabled === true && isCommented) {
+          updatedLines.push(layerLine);
+          if (this.options.debugMode) {
+            this.verbose(1, `Uncommenting layer: ${layerLine} (${reason})`);
           }
-          continue;
-        }
-
-        // Determine the game mode of this layer
-        const layerGameMode = this.determineGameMode(layerLine);
-
-        // Check if this game mode is in the always enabled list - this overrides level-based rules
-        if (
-          layerGameMode &&
-          this.options.alwaysEnabledGameModes &&
-          this.options.alwaysEnabledGameModes.includes(layerGameMode)
-        ) {
-          // This game mode should always be enabled
-          if (isCommented) {
-            updatedLines.push(layerLine);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Uncommenting layer: ${layerLine} (always enabled game mode: ${layerGameMode})`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Extract the level name for this layer
-        const levelName = this.extractLevelName(layerLine);
-
-        // Check if this layer's level is in the always enabled levels list
-        if (
-          levelName &&
-          this.options.alwaysEnabledLevels &&
-          this.options.alwaysEnabledLevels.includes(levelName)
-        ) {
-          // This level should always be enabled
-          if (isCommented) {
-            updatedLines.push(layerLine);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Uncommenting layer: ${layerLine} (always enabled level: ${levelName})`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if this layer is in the always disabled list
-        if (
-          this.options.alwaysDisabledLayers &&
-          this.options.alwaysDisabledLayers.includes(layerLine)
-        ) {
-          // This layer should always be commented out
-          if (!isCommented) {
-            updatedLines.push(`${commentPrefix}${layerLine}`);
-            if (this.options.debugMode) {
-              this.verbose(1, `Commenting out layer: ${layerLine} (always disabled layer)`);
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if this layer's level is in the always disabled levels list
-        if (
-          levelName &&
-          this.options.alwaysDisabledLevels &&
-          this.options.alwaysDisabledLevels.includes(levelName)
-        ) {
-          // This level should always be commented out
-          if (!isCommented) {
-            updatedLines.push(`${commentPrefix}${layerLine}`);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Commenting out layer: ${layerLine} (always disabled level: ${levelName})`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if this game mode is in the always disabled list
-        if (
-          layerGameMode &&
-          this.options.alwaysDisabledGameModes &&
-          this.options.alwaysDisabledGameModes.includes(layerGameMode)
-        ) {
-          // This game mode should always be commented out
-          if (!isCommented) {
-            updatedLines.push(`${commentPrefix}${layerLine}`);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Commenting out layer: ${layerLine} (always disabled game mode: ${layerGameMode})`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if this game mode is time-disabled based on current time
-        if (layerGameMode && this.isGameModeTimeDisabled(layerGameMode)) {
-          if (!isCommented) {
-            updatedLines.push(`${commentPrefix}${layerLine}`);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Commenting out layer: ${layerLine} (${layerGameMode} disabled by time-based rule)`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if we should disable this game mode because we're in Seed mode
-        if (
-          isSeedMode &&
-          layerGameMode &&
-          this.options.disableModesInSeedMode &&
-          this.options.disableModesInSeedMode.includes(layerGameMode)
-        ) {
-          // Always comment out this layer in Seed mode, regardless of skip counter or skip rounds value
-          if (!isCommented) {
-            updatedLines.push(`${commentPrefix}${layerLine}`);
-            if (this.options.debugMode) {
-              this.verbose(
-                1,
-                `Commenting out layer: ${layerLine} (${layerGameMode} disabled during Seed mode)`
-              );
-            }
-          } else {
-            updatedLines.push(line);
-          }
-          continue;
-        }
-
-        // Check if this game mode should be commented out based on rotation
-        if (layerGameMode) {
-          const skipCount = this.gameModeCounters[layerGameMode] || 0;
-
-          if (skipCount > 0) {
-            // This game mode should be commented out
-            if (!isCommented) {
-              updatedLines.push(`${commentPrefix}${layerLine}`);
-              if (this.options.debugMode) {
-                this.verbose(
-                  1,
-                  `Commenting out layer: ${layerLine} (${layerGameMode}, skip count: ${skipCount})`
-                );
-              }
-            } else {
-              updatedLines.push(line);
-            }
-          } else {
-            // This game mode should be uncommented
-            if (isCommented) {
-              updatedLines.push(layerLine);
-              if (this.options.debugMode) {
-                this.verbose(1, `Uncommenting layer: ${layerLine} (${layerGameMode})`);
-              }
-            } else {
-              updatedLines.push(line);
-            }
+        } else if (enabled === false && !isCommented) {
+          updatedLines.push(`// ${layerLine}`);
+          if (this.options.debugMode) {
+            this.verbose(1, `Commenting out layer: ${layerLine} (${reason})`);
           }
         } else {
-          // If we can't determine the game mode, leave the line as is
           updatedLines.push(line);
         }
       }
 
-      // Write the updated content back to the file
-      fs.writeFileSync(filePath, updatedLines.join('\n'), 'utf8');
+      const updatedContent = updatedLines.join('\n');
+      if (updatedContent === originalContent) {
+        this.verbose(1, 'LayerVoting.cfg is already up to date.');
+        return false;
+      }
 
+      fs.writeFileSync(filePath, updatedContent, 'utf8');
       this.verbose(1, `Updated LayerVoting.cfg file successfully.`);
+      return true;
     } catch (error) {
       this.verbose(1, `Error updating LayerVoting.cfg file: ${error.message}`);
+      return false;
     }
   }
 
+  // Returns true when the file content changed.
   async sanitizeLayerVotingFile() {
     try {
       const filePath = this.options.layerVotingFilePath;
       // Check if the file exists
       if (!fs.existsSync(filePath)) {
         this.verbose(1, `LayerVoting.cfg file not found at ${filePath}`);
-        return;
+        return false;
       }
-      // Read the current file content
-      const fileLines = fs.readFileSync(filePath, 'utf8').split('\n');
-      const sanitizedLines = [];
-      // Process each line
-      for (const line of fileLines) {
-        const trimmedLine = line.trim();
-        // Skip empty lines
-        if (trimmedLine === '') {
-          sanitizedLines.push(line);
-          continue;
-        }
-        // Handle comment lines that are not layer lines
-        if (trimmedLine.startsWith('// NOTE') || trimmedLine.startsWith('// LAYER_VOTING')) {
-          sanitizedLines.push(line);
-          continue;
-        }
-        // Process layer lines (both commented and uncommented)
-        let isCommented = false;
-        let layerLine = trimmedLine;
-        // Check if the line is commented (either '// LayerName' or '//LayerName')
-        if (trimmedLine.startsWith('// ')) {
-          isCommented = true;
-          layerLine = trimmedLine.substring(3).trim();
-        } else if (trimmedLine.startsWith('//')) {
-          isCommented = true;
-          layerLine = trimmedLine.substring(2).trim();
-        }
-        // Sanitize the line format
-        if (isCommented) {
-          sanitizedLines.push(`// ${layerLine}`);
-        } else {
-          sanitizedLines.push(layerLine);
-        }
-      }
-      // Write the sanitized content back to the file
-      fs.writeFileSync(filePath, sanitizedLines.join('\n'), 'utf8');
+      const originalContent = fs.readFileSync(filePath, 'utf8');
+      const sanitizedLines = originalContent.split('\n').map((line) => {
+        const parsedLine = this.parseLayerVotingLine(line);
+        if (!parsedLine) return line;
+        return parsedLine.isCommented ? `// ${parsedLine.layerLine}` : parsedLine.layerLine;
+      });
+      const sanitizedContent = sanitizedLines.join('\n');
+      if (sanitizedContent === originalContent) return false;
+
+      fs.writeFileSync(filePath, sanitizedContent, 'utf8');
       this.verbose(1, `Sanitized LayerVoting.cfg file to ensure consistent comment formatting.`);
+      return true;
     } catch (error) {
       this.verbose(1, `Error sanitizing LayerVoting.cfg file: ${error.message}`);
+      return false;
     }
   }
 
@@ -881,10 +727,21 @@ export default class LayerRotationManager extends BasePlugin {
         if (hasTimeBasedRules) {
           this.verbose(1, 'Time-based rules configured. Updating layer voting file.');
         }
-        await this.updateLayerVotingFile(currentGameMode);
+        if (await this.updateLayerVotingFile(currentGameMode)) {
+          await this.reloadServerConfig();
+        }
       }
     } catch (error) {
       this.verbose(1, `Error checking current game mode: ${error.message}`);
+    }
+  }
+
+  async reloadServerConfig() {
+    try {
+      await this.server.rcon.execute('AdminReloadServerConfig');
+      this.verbose(1, 'Executed AdminReloadServerConfig command to refresh server configuration.');
+    } catch (error) {
+      this.verbose(1, `AdminReloadServerConfig failed: ${error.message}`);
     }
   }
 }
