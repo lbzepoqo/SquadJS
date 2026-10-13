@@ -1,0 +1,60 @@
+[
+  { "event": "NEW_GAME", "layerClassname": "Sumari_Seed_v1", "winner": null, "layer": null },
+  { "event": "ROUND_ENDED", "winner": null, "loser": null },
+  {
+    "event": "NEW_GAME",
+    "layerClassname": "Mestia_AAS_v1",
+    "winner": null,
+    "layer": "Sumari Bala"
+  },
+  {
+    "event": "ROUND_ENDED",
+    "winner": {
+      "team": "2",
+      "subfaction": "118th Combined Arms Brigade",
+      "faction": "People's Liberation Army",
+      "tickets": "43",
+      "layer": "Mestia AAS v1",
+      "level": "Mestia"
+    },
+    "loser": {
+      "team": "1",
+      "subfaction": "1st Infantry Division",
+      "faction": "United States Army",
+      "tickets": "0",
+      "layer": "Mestia AAS v1",
+      "level": "Mestia"
+    }
+  },
+  {
+    "event": "NEW_GAME",
+    "layerClassname": "Yehorivka_RAAS_v2",
+    "winner": "118th Combined Arms Brigade",
+    "layer": "Mestia"
+  },
+  {
+    "event": "ROUND_ENDED",
+    "winner": {
+      "team": "2",
+      "subfaction": "3rd Motor Rifle Brigade",
+      "faction": "Russian Ground Forces",
+      "tickets": "302",
+      "layer": "Yehorivka RAAS v2",
+      "level": "Yehorivka"
+    },
+    "loser": {
+      "team": "1",
+      "subfaction": "1st Separate Cossack Brigade",
+      "faction": "Irregular Militia Forces",
+      "tickets": "0",
+      "layer": "Yehorivka RAAS v2",
+      "level": "Yehorivka"
+    }
+  },
+  {
+    "event": "NEW_GAME",
+    "layerClassname": "Manicouagan_RAAS_v1",
+    "winner": "3rd Motor Rifle Brigade",
+    "layer": "Yehorivka"
+  }
+]

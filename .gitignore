@@ -21,6 +21,7 @@ config_active*.json
 *-state.json.tmp
 *.sqlite*
 *.log
+!tests/fixtures/**/*.log
 squadjs-logs/
 rcon-recordings/
 cpu-profiles/

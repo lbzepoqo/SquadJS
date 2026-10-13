@@ -1,0 +1,20 @@
+[
+  {
+    "event": "CHAT_COMMAND:profile",
+    "name": "Player1",
+    "eosID": "00000000000000000000000000000001",
+    "message": ""
+  },
+  {
+    "event": "CHAT_COMMAND:inv",
+    "name": "Player2",
+    "eosID": "00000000000000000000000000000002",
+    "message": "3"
+  },
+  {
+    "event": "CHAT_COMMAND:b",
+    "name": "Player3",
+    "eosID": "00000000000000000000000000000003",
+    "message": "sl"
+  }
+]

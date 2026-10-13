@@ -1,0 +1,29 @@
+[
+  {
+    "event": "ROUND_ENDED",
+    "winner": {
+      "team": "2",
+      "subfaction": "Manticore Security Task Force",
+      "faction": "Western Private Military Contractors",
+      "tickets": "442",
+      "layer": "Sanxian Invasion v2",
+      "level": "Sanxian Islands"
+    },
+    "loser": {
+      "team": "1",
+      "subfaction": "5th Marine Brigade",
+      "faction": "PLA Navy Marine Corps",
+      "tickets": "0",
+      "layer": "Sanxian Invasion v2",
+      "level": "Sanxian Islands"
+    }
+  },
+  {
+    "event": "NEW_GAME",
+    "layerClassname": "Harju_AAS_v3",
+    "winner": "Manticore Security Task Force",
+    "layer": "Sanxian Islands"
+  },
+  { "event": "ROUND_ENDED", "winner": null, "loser": null },
+  { "event": "NEW_GAME", "layerClassname": "Sumari_Seed_v1", "winner": null, "layer": "Harju" }
+]

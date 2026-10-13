@@ -1,0 +1,23 @@
+[2026.10.08-00.00.14:602][  0]LogWorld: Bringing World /Game/Maps/Sumari/Gameplay_Layers/Sumari_Seed_v1.Sumari_Seed_v1 up for play (max tick rate 64) at 2026.10.08-00.00.14
+[2026.10.08-12.20.18:080][550]LogGameMode: Display: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-12.20.18:098][550]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): 1st Infantry Division won on Sumari Bala
+[2026.10.08-12.20.18:098][550]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): The game was a draw on Sumari Bala
+[2026.10.08-12.20.18:099][550]LogGameState: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-12.22.58:370][746]LogWorld: Bringing World /Game/Maps/TransitionMap.TransitionMap up for play (max tick rate 64) at 2026.10.08-12.22.58
+[2026.10.08-12.22.59:200][779]LogWorld: Bringing World /Game/Maps/Mestia_Green/Gameplay_Layers/Mestia_AAS_v1.Mestia_AAS_v1 up for play (max tick rate 64) at 2026.10.08-12.22.59
+[2026.10.08-13.13.10:023][319]LogGameMode: Display: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-13.13.10:107][319]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): The game was a draw on Mestia
+[2026.10.08-13.13.10:107][319]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): 118th Combined Arms Brigade won on Mestia
+[2026.10.08-13.13.10:109][319]LogSquadGameEvents: Display: Team 2, 118th Combined Arms Brigade ( People's Liberation Army ) has won the match with 43 Tickets on layer Mestia AAS v1 (level Mestia)!
+[2026.10.08-13.13.10:109][319]LogSquadGameEvents: Display: Team 1, 1st Infantry Division ( United States Army ) has lost the match with 0 Tickets on layer Mestia AAS v1 (level Mestia)!
+[2026.10.08-13.13.10:109][319]LogGameState: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-13.16.23:273][606]LogWorld: Bringing World /Game/Maps/TransitionMap.TransitionMap up for play (max tick rate 64) at 2026.10.08-13.16.23
+[2026.10.08-13.16.26:184][688]LogWorld: Bringing World /Game/Maps/Yehorivka/Gameplay_Layers/Yehorivka_RAAS_v2.Yehorivka_RAAS_v2 up for play (max tick rate 64) at 2026.10.08-13.16.26
+[2026.10.08-13.48.35:629][178]LogGameMode: Display: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-13.48.35:737][178]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): The game was a draw on Yehorivka
+[2026.10.08-13.48.35:737][178]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): 3rd Motor Rifle Brigade won on Yehorivka
+[2026.10.08-13.48.35:739][178]LogSquadGameEvents: Display: Team 2, 3rd Motor Rifle Brigade ( Russian Ground Forces ) has won the match with 302 Tickets on layer Yehorivka RAAS v2 (level Yehorivka)!
+[2026.10.08-13.48.35:739][178]LogSquadGameEvents: Display: Team 1, 1st Separate Cossack Brigade ( Irregular Militia Forces ) has lost the match with 0 Tickets on layer Yehorivka RAAS v2 (level Yehorivka)!
+[2026.10.08-13.48.35:739][178]LogGameState: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.08-13.52.23:675][636]LogWorld: Bringing World /Game/Maps/TransitionMap.TransitionMap up for play (max tick rate 64) at 2026.10.08-13.52.23
+[2026.10.08-13.52.27:431][758]LogWorld: Bringing World /Game/Maps/Manicouagan/Gameplay_Layers/Manicouagan_RAAS_v1.Manicouagan_RAAS_v1 up for play (max tick rate 64) at 2026.10.08-13.52.27

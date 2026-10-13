@@ -1,0 +1,11 @@
+[2026.10.07-15.38.01:628][490]LogSquadGameEvents: Display: Team 2, Manticore Security Task Force ( Western Private Military Contractors ) has won the match with 442 Tickets on layer Sanxian Invasion v2 (level Sanxian Islands)!
+[2026.10.07-15.38.01:628][490]LogSquadGameEvents: Display: Team 1, 5th Marine Brigade ( PLA Navy Marine Corps ) has lost the match with 0 Tickets on layer Sanxian Invasion v2 (level Sanxian Islands)!
+[2026.10.07-15.38.01:628][490]LogGameState: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.07-15.40.33:972][151]LogWorld: Bringing World /Game/Maps/TransitionMap.TransitionMap up for play (max tick rate 64) at 2026.10.07-15.40.33
+[2026.10.07-15.40.37:327][267]LogWorld: Bringing World /Harju/Maps/Gameplay_Layers/Harju_AAS_v3.Harju_AAS_v3 up for play (max tick rate 64) at 2026.10.07-15.40.37
+[2026.10.07-15.42.12:457][231]LogGameMode: Display: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.07-15.42.12:457][231]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): 1st Separate Guards Brigade won on Harju
+[2026.10.07-15.42.12:457][231]LogSquadTrace: [DedicatedServer]DetermineMatchWinner(): The game was a draw on Harju
+[2026.10.07-15.42.12:458][231]LogGameState: Match State Changed from InProgress to WaitingPostMatch
+[2026.10.07-15.42.43:869][168]LogWorld: Bringing World /Game/Maps/TransitionMap.TransitionMap up for play (max tick rate 64) at 2026.10.07-15.42.43
+[2026.10.07-15.42.44:845][211]LogWorld: Bringing World /Game/Maps/Sumari/Gameplay_Layers/Sumari_Seed_v1.Sumari_Seed_v1 up for play (max tick rate 64) at 2026.10.07-15.42.44
