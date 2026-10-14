@@ -126,19 +126,26 @@ export default class SquadBalancer extends DiscordBasePlugin {
       moveCoefficient: {
         required: false,
         description:
-          "Fraction of the smaller team to move per unit of relative per-player score delta, where the delta is expressed as a share of the match average. At 0.35 a winner scoring twice the loser's rate moves about a third of the smaller team. Higher = more aggressive redistribution.",
-        default: 0.35
+          "Fraction of the smaller team to move per unit of relative per-player score delta, where the delta is expressed as a share of the match average. At 0.5 a winner scoring twice the loser's rate moves about a third of the smaller team. Higher = more aggressive redistribution.",
+        default: 0.5
       },
       maxMoveFraction: {
         required: false,
         description:
-          'Hard cap on the fraction of the smaller team that can be moved in a single swap.',
-        default: 0.35
+          'Hard cap on the fraction of the smaller team that can be moved in a single swap. It takes priority over minMoveSize. Only a single squad larger than the cap can exceed it, because a swap always moves at least one squad. At 0.4, teams of 45 or more can move two full squads.',
+        default: 0.4
       },
       minMoveSize: {
         required: false,
-        description: 'Minimum number of players to move when a swap is triggered.',
-        default: 1
+        description:
+          'Minimum number of players to move when a swap is triggered. Kill and revive counts are a weak measure of team strength, so the default moves about one full squad even when the score delta is small.',
+        default: 9
+      },
+      minimumPlayers: {
+        required: false,
+        description:
+          'Minimum number of players on the server for a reshuffle. Below it, a win streak is reset without moving anyone.',
+        default: 40
       },
       autoBalanceMaxMoves: {
         required: false,
@@ -379,6 +386,18 @@ export default class SquadBalancer extends DiscordBasePlugin {
         1,
         `Below threshold (${this.consecutiveWins}/${this.options.consecutiveWinsThreshold}); no action.`
       );
+      return;
+    }
+
+    const playerCount = this.server.players.length;
+    if (playerCount < this.options.minimumPlayers) {
+      this.verbose(
+        1,
+        `Reshuffle skipped: ${playerCount} players online, below minimumPlayers=${this.options.minimumPlayers}; resetting streak.`
+      );
+      this.consecutiveWins = 0;
+      this.lastWinnerTeam = null;
+      this.persistStreak();
       return;
     }
 

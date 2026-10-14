@@ -6,12 +6,17 @@
  *
  * Strategy:
  *   1. Target move size scales with per-player score delta between winner and loser,
- *      capped by `maxMoveFraction` of the smaller team and floored by `minMoveSize`.
- *   2. From winner: greedily pick top-scoring squads (always include #1 even if it
- *      overshoots — it's the primary source of imbalance).
- *   3. From loser: greedily pick bottom-scoring squads so the weakest link moves to
- *      the dominant side (not their top squad — that was the original bug).
- *   4. Numerical mismatches between the two selections are left to the auto-balancer.
+ *      floored by `minMoveSize` and capped by `maxMoveFraction` of the smaller team.
+ *      The cap wins over the floor. Only the first squad on each side may exceed it,
+ *      so that a swap always moves at least one squad.
+ *   2. Squads are ranked by score per player. A squad total mostly measures squad
+ *      size, so ranking on it moved the biggest winner squad and the smallest loser
+ *      squads every time.
+ *   3. From winner: pick the strongest squads until the moved player count is as close
+ *      to the target as the squad sizes allow.
+ *   4. From loser: pick the weakest squads the same way, aiming at the number of
+ *      players the winner sends, so the teams stay even. The auto-balancer only
+ *      corrects what is left.
  */
 
 function aggregateScore(squads) {
@@ -29,12 +34,12 @@ function eligibleSquads(squads) {
 
 function calcTargetMoveSize({ winnerScore, loserScore, winnerCount, loserCount, config }) {
   const smallerTeamSize = Math.min(winnerCount, loserCount);
-  const cap = Math.max(config.minMoveSize, Math.floor(smallerTeamSize * config.maxMoveFraction));
+  const cap = Math.max(1, Math.floor(smallerTeamSize * config.maxMoveFraction));
   const reasoning = [];
 
   if (smallerTeamSize === 0) {
     reasoning.push('Smaller team has 0 players; no swap possible.');
-    return { target: 0, reasoning };
+    return { target: 0, cap, reasoning };
   }
 
   const perPlayerWinner = winnerScore / Math.max(1, winnerCount);
@@ -51,7 +56,7 @@ function calcTargetMoveSize({ winnerScore, loserScore, winnerCount, loserCount, 
     reasoning.push(
       `Winner did not outperform loser by score; using minMoveSize=${config.minMoveSize}.`
     );
-    return { target: Math.min(cap, config.minMoveSize), reasoning };
+    return { target: Math.min(cap, config.minMoveSize), cap, reasoning };
   }
 
   // The two scoring sources sit orders of magnitude apart: SAT per-player scores run
@@ -63,9 +68,9 @@ function calcTargetMoveSize({ winnerScore, loserScore, winnerCount, loserCount, 
   const relativeDelta = averagePerPlayer > 0 ? delta / averagePerPlayer : 0;
   const rawFraction = relativeDelta * config.moveCoefficient;
   const fraction = Math.min(config.maxMoveFraction, rawFraction);
-  const target = Math.max(
-    config.minMoveSize,
-    Math.min(cap, Math.round(smallerTeamSize * fraction))
+  const target = Math.min(
+    cap,
+    Math.max(config.minMoveSize, Math.round(smallerTeamSize * fraction))
   );
 
   reasoning.push(`Relative delta: ${(relativeDelta * 100).toFixed(1)}% of match average.`);
@@ -75,29 +80,35 @@ function calcTargetMoveSize({ winnerScore, loserScore, winnerCount, loserCount, 
     )}%; target=${target} (cap=${cap}, min=${config.minMoveSize}).`
   );
 
-  return { target, reasoning };
+  return { target, cap, reasoning };
 }
 
-function pickSquads(squads, target, { ascending }) {
+function perPlayerScore(squad) {
+  return (squad.performanceScore || 0) / Math.max(1, squad.players.length);
+}
+
+/**
+ * Adds squads in rank order while each one brings the moved player count closer to
+ * the target. The first squad is always taken. A later squad is skipped in favor of a
+ * smaller one further down when it would overshoot the target by more than the
+ * count is short, or push the count past the cap.
+ */
+function pickSquads(squads, target, cap, { ascending }) {
   const sorted = [...squads].sort((a, b) =>
-    ascending
-      ? (a.performanceScore || 0) - (b.performanceScore || 0)
-      : (b.performanceScore || 0) - (a.performanceScore || 0)
+    ascending ? perPlayerScore(a) - perPlayerScore(b) : perPlayerScore(b) - perPlayerScore(a)
   );
 
   const selection = [];
   let totalPlayers = 0;
 
   for (const squad of sorted) {
+    if (selection.length > 0 && totalPlayers >= target) break;
     const size = squad.players.length;
-    if (selection.length === 0) {
-      selection.push(squad);
-      totalPlayers += size;
-    } else if (totalPlayers + size <= target) {
+    const closer = Math.abs(totalPlayers + size - target) < Math.abs(totalPlayers - target);
+    if (selection.length === 0 || (closer && totalPlayers + size <= cap)) {
       selection.push(squad);
       totalPlayers += size;
     }
-    if (totalPlayers >= target) break;
   }
 
   return { selection, totalPlayers };
@@ -121,7 +132,11 @@ export function decideSwap({ winner, loser, config }) {
   const winnerScore = aggregateScore(winnerEligible);
   const loserScore = aggregateScore(loserEligible);
 
-  const { target, reasoning: targetReasoning } = calcTargetMoveSize({
+  const {
+    target,
+    cap,
+    reasoning: targetReasoning
+  } = calcTargetMoveSize({
     winnerScore,
     loserScore,
     winnerCount: winner.playerCount,
@@ -138,14 +153,22 @@ export function decideSwap({ winner, loser, config }) {
     };
   }
 
-  const fromWinner = pickSquads(winnerEligible, target, { ascending: false });
-  const fromLoser = pickSquads(loserEligible, target, { ascending: true });
+  const fromWinner = pickSquads(winnerEligible, target, cap, { ascending: false });
+  // The loser side may match a first winner squad that is larger than the cap.
+  const fromLoser = pickSquads(
+    loserEligible,
+    fromWinner.totalPlayers,
+    Math.max(cap, fromWinner.totalPlayers),
+    {
+      ascending: true
+    }
+  );
 
   reasoning.push(
-    `Winner→Loser: ${fromWinner.selection.length} squads / ${fromWinner.totalPlayers} players (top-scoring).`
+    `Winner→Loser: ${fromWinner.selection.length} squads / ${fromWinner.totalPlayers} players (highest score per player).`
   );
   reasoning.push(
-    `Loser→Winner: ${fromLoser.selection.length} squads / ${fromLoser.totalPlayers} players (bottom-scoring).`
+    `Loser→Winner: ${fromLoser.selection.length} squads / ${fromLoser.totalPlayers} players (lowest score per player).`
   );
 
   return {
