@@ -1897,19 +1897,24 @@ Grafana:
            <pre><code>-2</code></pre></li>
 <li><h4>moveCoefficient</h4>
            <h6>Description</h6>
-           <p>Fraction of the smaller team to move per unit of relative per-player score delta, where the delta is expressed as a share of the match average. At 0.35 a winner scoring twice the loser's rate moves about a third of the smaller team. Higher = more aggressive redistribution.</p>
+           <p>Fraction of the smaller team to move per unit of relative per-player score delta, where the delta is expressed as a share of the match average. At 0.5 a winner scoring twice the loser's rate moves about a third of the smaller team. Higher = more aggressive redistribution.</p>
            <h6>Default</h6>
-           <pre><code>0.35</code></pre></li>
+           <pre><code>0.5</code></pre></li>
 <li><h4>maxMoveFraction</h4>
            <h6>Description</h6>
-           <p>Hard cap on the fraction of the smaller team that can be moved in a single swap.</p>
+           <p>Hard cap on the fraction of the smaller team that can be moved in a single swap. It takes priority over minMoveSize. Only a single squad larger than the cap can exceed it, because a swap always moves at least one squad. At 0.4, teams of 45 or more can move two full squads.</p>
            <h6>Default</h6>
-           <pre><code>0.35</code></pre></li>
+           <pre><code>0.4</code></pre></li>
 <li><h4>minMoveSize</h4>
            <h6>Description</h6>
-           <p>Minimum number of players to move when a swap is triggered.</p>
+           <p>Minimum number of players to move when a swap is triggered. Kill and revive counts are a weak measure of team strength, so the default moves about one full squad even when the score delta is small.</p>
            <h6>Default</h6>
-           <pre><code>1</code></pre></li>
+           <pre><code>9</code></pre></li>
+<li><h4>minimumPlayers</h4>
+           <h6>Description</h6>
+           <p>Minimum number of players on the server for a reshuffle. Below it, a win streak is reset without moving anyone.</p>
+           <h6>Default</h6>
+           <pre><code>40</code></pre></li>
 <li><h4>autoBalanceMaxMoves</h4>
            <h6>Description</h6>
            <p>Hard cap on how many players the follow-up auto-balancer may move. The reshuffle it runs after is designed to end roughly even, so a large correction means the roster read is wrong rather than the teams being lopsided.</p>

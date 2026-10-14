@@ -504,9 +504,10 @@
       "killWeight": 1,
       "reviveWeight": 1,
       "teamkillWeight": -2,
-      "moveCoefficient": 0.35,
-      "maxMoveFraction": 0.35,
-      "minMoveSize": 1,
+      "moveCoefficient": 0.5,
+      "maxMoveFraction": 0.4,
+      "minMoveSize": 9,
+      "minimumPlayers": 40,
       "autoBalanceMaxMoves": 8,
       "satScoresDir": "",
       "satFileRetainCount": 6
