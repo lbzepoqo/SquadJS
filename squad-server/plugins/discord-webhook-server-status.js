@@ -71,6 +71,12 @@ export default class DiscordWebhookServerStatus extends BasePlugin {
 
   async prepareToMount() {
     await this.StatusMessage.sync();
+    if (!this.webhook) return;
+    // The factory runs prepareToMount for one plugin at a time. findOrCreate uses a transaction,
+    // and SQLite rejects a second transaction while another entry's transaction is open.
+    [this.statusMessage] = await this.StatusMessage.findOrCreate({
+      where: { server: this.server.id, webhookKey: this.webhook.storageKey }
+    });
   }
 
   async mount() {
@@ -86,10 +92,6 @@ export default class DiscordWebhookServerStatus extends BasePlugin {
 
   async update() {
     try {
-      if (!this.statusMessage)
-        [this.statusMessage] = await this.StatusMessage.findOrCreate({
-          where: { server: this.server.id, webhookKey: this.webhook.storageKey }
-        });
       const payload = await this.generateMessage();
       const messageID = await this.webhook.publish(payload, this.statusMessage.messageID);
       if (messageID !== this.statusMessage.messageID) {
