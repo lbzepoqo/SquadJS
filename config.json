@@ -72,6 +72,17 @@
       "setBotStatus": true
     },
     {
+      "plugin": "CommanderResignAlert",
+      "enabled": false,
+      "discordClient": "discord",
+      "channelID": "",
+      "maxCommandSeconds": 300,
+      "warnInGameAdmins": true,
+      "pollInterval": 5000,
+      "commandSquadName": "Command Squad",
+      "color": 16747520
+    },
+    {
       "plugin": "AutoKickUnassignedExtended",
       "enabled": false,
       "warningMessage": "Join a squad, you are unassigned and will be kicked",

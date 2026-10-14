@@ -296,6 +296,49 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
         </details>
 
 <details>
+          <summary>CommanderResignAlert</summary>
+          <h2>CommanderResignAlert</h2>
+          <p>The <code>CommanderResignAlert</code> plugin alerts admins when a player takes commander and resigns shortly after, which starts the commander cooldown for the team. It posts the alert to a Discord channel and warns the in-game admins. A commander who disconnects or whose squad disbands is not reported.</p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>channelID (Required)</h4>
+           <h6>Description</h6>
+           <p>The ID of the channel to post the alerts to.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>maxCommandSeconds</h4>
+           <h6>Description</h6>
+           <p>A resign within this many seconds after taking command is reported.</p>
+           <h6>Default</h6>
+           <pre><code>300</code></pre></li>
+<li><h4>warnInGameAdmins</h4>
+           <h6>Description</h6>
+           <p>Also warn in-game admins (players with the canseeadminchat permission).</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>pollInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between two checks of the squad and player lists. Each check sends ListSquads and ListPlayers.</p>
+           <h6>Default</h6>
+           <pre><code>5000</code></pre></li>
+<li><h4>commandSquadName</h4>
+           <h6>Description</h6>
+           <p>The name the game gives the squad of the commander.</p>
+           <h6>Default</h6>
+           <pre><code>Command Squad</code></pre></li>
+<li><h4>color</h4>
+           <h6>Description</h6>
+           <p>The color of the embed.</p>
+           <h6>Default</h6>
+           <pre><code>16747520</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>AutoKickUnassignedExtended</summary>
           <h2>AutoKickUnassignedExtended</h2>
           <p>The <code>AutoKickUnassignedExtended</code> plugin works like <code>AutoKickUnassigned</code> and can limit warnings and kicks to times when the public queue has players.</p>
