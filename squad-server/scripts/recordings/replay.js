@@ -44,7 +44,8 @@ import { listRecordingFiles, parseTime, readEntries } from './reader.js';
 const { Sequelize } = sequelize;
 const ALLOWED_HOSTS = new Set(['raw.githubusercontent.com']);
 const QUERY_COMMAND = /^(List|Show)\w*/;
-const NEVER_REPLAYED = new Set(['RconRecorder']);
+// DiscordWebhookServerStatus calls the webhook URL directly, so a replay would post to the real channel.
+const NEVER_REPLAYED = new Set(['RconRecorder', 'DiscordWebhookServerStatus']);
 const realSetImmediate = setImmediate;
 
 function parseArguments(argv) {
