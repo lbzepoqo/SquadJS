@@ -411,6 +411,13 @@
       "embedImageURL": ""
     },
     {
+      "plugin": "DiscordWebhookServerStatus",
+      "enabled": false,
+      "messageStore": "sqlite",
+      "webhookURL": "",
+      "updateInterval": 60000
+    },
+    {
       "plugin": "CBLInfo",
       "enabled": true,
       "discordClient": "discord",

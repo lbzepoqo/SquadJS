@@ -1545,6 +1545,29 @@ Grafana:
         </details>
 
 <details>
+          <summary>DiscordWebhookServerStatus</summary>
+          <h2>DiscordWebhookServerStatus</h2>
+          <p>The <code>DiscordWebhookServerStatus</code> plugin keeps a server status message up to date in a Discord channel through a webhook. The bot does not need to join that Discord server, and the webhook cannot send commands to SquadJS, so the channel can belong to another community. The plugin posts the message once and then edits it. If the message is deleted, the plugin posts a new one.</p>
+          <h3>Options</h3>
+          <ul><li><h4>messageStore (Required)</h4>
+           <h6>Description</h6>
+           <p>Sequelize connector name. Stores the ID of the status message.</p>
+           <h6>Default</h6>
+           <pre><code>sqlite</code></pre></li>
+<li><h4>webhookURL (Required)</h4>
+           <h6>Description</h6>
+           <p>URL of the Discord webhook. Add <code>?thread_id=...</code> to post in a thread. Treat the URL as a secret: anyone who has it can post in the channel.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>https://discord.com/api/webhooks/123/abc</code></pre>
+<li><h4>updateInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between two updates of the status message.</p>
+           <h6>Default</h6>
+           <pre><code>60000</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>CBLInfo</summary>
           <h2>CBLInfo</h2>
           <p>The <code>CBLInfo</code> plugin alerts admins when a harmful player is detected joining their server based on data from the <a href="https://communitybanlist.com/">Community Ban List</a>.</p>
