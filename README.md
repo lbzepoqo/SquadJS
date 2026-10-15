@@ -2334,7 +2334,7 @@ Grafana:
            <pre><code>sqlite</code></pre></li>
 <li><h4>channelID</h4>
            <h6>Description</h6>
-           <p>The ID of the channel to report removed flags to. Leave empty to only log them.</p>
+           <p>The ID of the channel to report removed flags to. Leave empty to only log them. The Discord connector is required either way.</p>
            <h6>Default</h6>
            <pre><code></code></pre></li><h6>Example</h6>
            <pre><code>667741905228136459</code></pre>
