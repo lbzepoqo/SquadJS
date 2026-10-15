@@ -3,6 +3,7 @@
 *.tmp
 
 config-test*.json
+secrets.json
 
 # Dependencies
 node_modules/

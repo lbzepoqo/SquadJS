@@ -1,10 +1,15 @@
 import Logger from 'core/logger';
 
+import Secrets from '../utils/secrets.js';
+
 export default class BasePlugin {
   constructor(server, options, connectors) {
     this.server = server;
     this.options = {};
     this.rawOptions = options;
+
+    // Secret references are resolved into this.options only, so rawOptions never holds a secret value.
+    const secrets = server?.secrets ?? new Secrets();
 
     for (const [optionName, option] of Object.entries(this.constructor.optionsSpecification)) {
       if (option.connector) {
@@ -21,7 +26,7 @@ export default class BasePlugin {
 
         this.options[optionName] =
           typeof this.rawOptions[optionName] !== 'undefined'
-            ? this.rawOptions[optionName]
+            ? secrets.resolve(this.rawOptions[optionName], `${this.constructor.name}.${optionName}`)
             : option.default;
       }
     }

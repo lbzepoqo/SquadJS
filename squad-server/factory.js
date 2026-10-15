@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import sequelize from 'sequelize';
 import AwnAPI from './utils/awn-api.js';
+import Secrets from './utils/secrets.js';
 
 import Logger from 'core/logger';
 
@@ -34,9 +35,13 @@ export default class SquadServerFactory {
       Logger.setColor(module, color);
     }
 
+    // values written as { "secret": "NAME" } come from the environment or secrets.json
+    const secrets = Secrets.fromFile(path.resolve(__dirname, '../secrets.json'));
+
     // create SquadServer
     Logger.verbose('SquadServerFactory', 1, 'Creating SquadServer...');
-    const server = new SquadServer(config.server);
+    const server = new SquadServer(secrets.resolve(config.server, 'server'));
+    server.secrets = secrets;
 
     // initialise connectors
     Logger.verbose('SquadServerFactory', 1, 'Preparing connectors...');
@@ -70,7 +75,7 @@ export default class SquadServerFactory {
           server,
           option.connector,
           connectorName,
-          config.connectors[connectorName]
+          secrets.resolve(config.connectors[connectorName], `connectors.${connectorName}`)
         );
       }
     }
