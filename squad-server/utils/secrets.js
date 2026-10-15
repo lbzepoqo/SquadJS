@@ -1,7 +1,7 @@
 import fs from 'fs';
 
 // A config value written as { "secret": "NAME" } is a reference to a secret, so passwords and tokens can be
-// kept out of the config file. The value comes from the environment variable NAME or, if that is not set,
+// kept out of the config file. The value comes from the environment variable NAME or, if that is not set or empty,
 // from the key NAME in the secrets file.
 export function isSecretReference(value) {
   return (
@@ -36,7 +36,8 @@ export default class Secrets {
   }
 
   get(name, location) {
-    if (typeof this.environment[name] !== 'undefined') return this.environment[name];
+    // An empty variable counts as unset; hosting panels often export unset variables as empty strings.
+    if (this.environment[name]) return this.environment[name];
     if (Object.prototype.hasOwnProperty.call(this.values, name)) return this.values[name];
     throw new Error(
       `${location} refers to secret "${name}", which is neither an environment variable nor a key in ${this.source}.`
