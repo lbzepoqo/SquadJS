@@ -611,6 +611,18 @@
       "removePlayerFromSquad": false
     },
     {
+      "plugin": "BattleMetricsFlagExpiry",
+      "enabled": false,
+      "discordClient": "discord",
+      "channelID": "",
+      "battlemetricsToken": "",
+      "flagIDs": [],
+      "maxAgeDays": 10,
+      "checkInterval": 3600000,
+      "dryRun": true,
+      "color": 3447003
+    },
+    {
       "plugin": "DiscordSubsystemRestarter",
       "enabled": false,
       "discordClient": "discord",

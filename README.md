@@ -2306,6 +2306,57 @@ Grafana:
         </details>
 
 <details>
+          <summary>BattleMetricsFlagExpiry</summary>
+          <h2>BattleMetricsFlagExpiry</h2>
+          <p>The <code>BattleMetricsFlagExpiry</code> plugin removes BattleMetrics player flags after a set number of days, for example flags that restrict a player from squad leader or pilot roles. It checks the flags on a timer through the BattleMetrics API, so players do not need to be online. Flags belong to the BattleMetrics organization, so a removal applies on every server of that organization.</p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>channelID</h4>
+           <h6>Description</h6>
+           <p>The ID of the channel to report removed flags to. Leave empty to only log them.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>battlemetricsToken (Required)</h4>
+           <h6>Description</h6>
+           <p>BattleMetrics API token that can read and remove player flags. Use a token with only the flag permissions.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>flagIDs (Required)</h4>
+           <h6>Description</h6>
+           <p>IDs of the BattleMetrics player flags that expire.</p>
+           <h6>Default</h6>
+           <pre><code>[]</code></pre></li><h6>Example</h6>
+           <pre><code>[
+  "01234567-89ab-cdef-0123-456789abcdef"
+]</code></pre>
+<li><h4>maxAgeDays</h4>
+           <h6>Description</h6>
+           <p>A flag is removed once it has been on a player for this many days.</p>
+           <h6>Default</h6>
+           <pre><code>10</code></pre></li>
+<li><h4>checkInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between two checks.</p>
+           <h6>Default</h6>
+           <pre><code>3600000</code></pre></li>
+<li><h4>dryRun</h4>
+           <h6>Description</h6>
+           <p>Only log the flags that would be removed, without removing them or posting to Discord.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>color</h4>
+           <h6>Description</h6>
+           <p>The color of the embed.</p>
+           <h6>Default</h6>
+           <pre><code>3447003</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordSubsystemRestarter</summary>
           <h2>DiscordSubsystemRestarter</h2>
           <p>The <code>DiscordSubSystemRestarter</code> plugin allows you to manually restart SquadJS subsystems in case an issues arises with them.<ul><li><code>!squadjs restartsubsystem rcon</code></li><li><code>!squadjs restartsubsystem logparser</code></li></ul></p>
