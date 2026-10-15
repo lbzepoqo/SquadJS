@@ -44,7 +44,8 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
       channelID: {
         required: false,
         description:
-          'The ID of the channel to report removed flags to. Leave empty to only log them.',
+          'The ID of the channel to report removed flags to. Leave empty to only log them. The Discord ' +
+          'connector is required either way.',
         default: '',
         example: '667741905228136459'
       },
@@ -129,7 +130,9 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
       this.verbose(1, `Flag check failed: ${error.message}${this.responseDetails(error)}`);
     }
 
-    if (this.mounted) this.checkTimeout = setTimeout(this.check, this.options.checkInterval);
+    // setTimeout runs delays above 2^31 - 1 ms at once, so the interval is capped.
+    if (this.mounted)
+      this.checkTimeout = setTimeout(this.check, Math.min(2147483647, this.options.checkInterval));
   }
 
   async removeExpiredFlags() {
@@ -145,7 +148,16 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
     const expired = selectExpiredFlags(activeEntries, this.options.maxAgeDays);
     if (expired.length === 0) return;
 
-    const flagNames = await this.client.getFlagNames();
+    // The names are only for the log and the report, so a failed lookup falls back to the flag IDs.
+    let flagNames = {};
+    try {
+      flagNames = await this.client.getFlagNames();
+    } catch (error) {
+      this.verbose(
+        1,
+        `Could not read the flag names: ${error.message}${this.responseDetails(error)}`
+      );
+    }
 
     if (this.options.dryRun) {
       this.verbose(1, `Dry run: ${expired.length} flags would be removed.`);
@@ -163,11 +175,6 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
     for (const entry of expired) {
       try {
         await this.client.removeFlag(entry.playerID, entry.flagID);
-        // Marked inactive now, so a re-add before the next check counts as a new activation.
-        await this.FlagActivation.update(
-          { active: false },
-          { where: { playerID: entry.playerID, flagID: entry.flagID } }
-        );
         removed.push(entry);
         this.verbose(1, `Removed ${this.describe(entry, flagNames)}.`);
       } catch (error) {
@@ -177,6 +184,21 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
           `Could not remove ${this.describe(entry, flagNames)}: ${
             error.message
           }${this.responseDetails(error)}`
+        );
+        await sleep(REMOVAL_GAP_MS);
+        continue;
+      }
+
+      // Marked inactive now, so a re-add before the next check counts as a new activation.
+      try {
+        await this.FlagActivation.update(
+          { active: false },
+          { where: { playerID: entry.playerID, flagID: entry.flagID } }
+        );
+      } catch (error) {
+        this.verbose(
+          1,
+          `Could not record the removal of ${this.describe(entry, flagNames)}: ${error.message}`
         );
       }
       await sleep(REMOVAL_GAP_MS);
