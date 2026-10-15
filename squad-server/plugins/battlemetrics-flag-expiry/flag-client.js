@@ -2,7 +2,6 @@ import axios from 'axios';
 
 const API_BASE_URL = 'https://api.battlemetrics.com';
 const REQUEST_TIMEOUT_MS = 15 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -81,21 +80,4 @@ export default class BattleMetricsFlagClient {
       }
     }
   }
-}
-
-// Picks the flags held for longer than maxAgeDays. When a player holds the same flag more than once,
-// the newest record decides, so re-adding a flag restarts its time.
-export function selectExpiredFlags(entries, maxAgeDays, now = Date.now()) {
-  const newestByPlayerFlag = new Map();
-  for (const entry of entries) {
-    const key = `${entry.playerID}:${entry.flagID}`;
-    const current = newestByPlayerFlag.get(key);
-    if (!current || Date.parse(entry.addedAt) > Date.parse(current.addedAt))
-      newestByPlayerFlag.set(key, entry);
-  }
-
-  const cutoff = now - maxAgeDays * DAY_MS;
-  return [...newestByPlayerFlag.values()]
-    .filter((entry) => Date.parse(entry.addedAt) <= cutoff)
-    .sort((first, second) => Date.parse(first.addedAt) - Date.parse(second.addedAt));
 }

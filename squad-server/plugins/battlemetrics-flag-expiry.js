@@ -1,7 +1,14 @@
+import Sequelize from 'sequelize';
+
 import DiscordBasePlugin from './discord-base-plugin.js';
-import BattleMetricsFlagClient, {
-  selectExpiredFlags
-} from './battlemetrics-flag-expiry/flag-client.js';
+import BattleMetricsFlagClient from './battlemetrics-flag-expiry/flag-client.js';
+import {
+  activationKey,
+  selectExpiredFlags,
+  trackActivations
+} from './battlemetrics-flag-expiry/expiry.js';
+
+const { DataTypes } = Sequelize;
 
 const REMOVAL_GAP_MS = 500;
 const EMBED_DESCRIPTION_LIMIT = 4000;
@@ -26,6 +33,14 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
   static get optionsSpecification() {
     return {
       ...DiscordBasePlugin.optionsSpecification,
+      flagStore: {
+        required: true,
+        description:
+          'Sequelize connector name. Stores since when each flag is active, because BattleMetrics keeps the ' +
+          'first added time when a removed flag is added again.',
+        connector: 'sequelize',
+        default: 'sqlite'
+      },
       channelID: {
         required: false,
         description:
@@ -59,7 +74,8 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
       dryRun: {
         required: false,
         description:
-          'Only log the flags that would be removed, without removing them or posting to Discord.',
+          'Only log the flags that would be removed, without removing them or posting to Discord. ' +
+          'The plugin still records since when each flag is active.',
         default: true
       },
       color: {
@@ -74,12 +90,24 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
     super(server, options, connectors);
 
     this.client = new BattleMetricsFlagClient(this.options.battlemetricsToken);
+    this.FlagActivation = this.options.flagStore.define(
+      `${this.constructor.name}_FlagActivation`,
+      {
+        playerID: { type: DataTypes.STRING, primaryKey: true },
+        flagID: { type: DataTypes.STRING, primaryKey: true },
+        activeSince: DataTypes.STRING,
+        active: DataTypes.BOOLEAN
+      },
+      { timestamps: false }
+    );
+    this.dryRunListed = false;
     this.check = this.check.bind(this);
     this.checkTimeout = null;
     this.mounted = false;
   }
 
   async prepareToMount() {
+    await this.FlagActivation.sync();
     if (this.options.channelID) await super.prepareToMount();
   }
 
@@ -110,15 +138,23 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
       entries.push(...(await this.client.listActiveFlags(flagID)));
     }
 
-    const expired = selectExpiredFlags(entries, this.options.maxAgeDays);
+    const previousActivations = await this.loadActivations();
+    const { activations, activeEntries } = trackActivations(previousActivations, entries);
+    await this.saveActivations(previousActivations, activations);
+
+    const expired = selectExpiredFlags(activeEntries, this.options.maxAgeDays);
     if (expired.length === 0) return;
 
     const flagNames = await this.client.getFlagNames();
 
     if (this.options.dryRun) {
       this.verbose(1, `Dry run: ${expired.length} flags would be removed.`);
-      for (const entry of expired)
-        this.verbose(1, `Dry run: would remove ${this.describe(entry, flagNames)}.`);
+      // The full list is logged once per start; later checks log the count only.
+      if (!this.dryRunListed) {
+        for (const entry of expired)
+          this.verbose(1, `Dry run: would remove ${this.describe(entry, flagNames)}.`);
+        this.dryRunListed = true;
+      }
       return;
     }
 
@@ -127,6 +163,11 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
     for (const entry of expired) {
       try {
         await this.client.removeFlag(entry.playerID, entry.flagID);
+        // Marked inactive now, so a re-add before the next check counts as a new activation.
+        await this.FlagActivation.update(
+          { active: false },
+          { where: { playerID: entry.playerID, flagID: entry.flagID } }
+        );
         removed.push(entry);
         this.verbose(1, `Removed ${this.describe(entry, flagNames)}.`);
       } catch (error) {
@@ -149,10 +190,37 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
     await this.report(`Could not remove ${failed.length} flags`, failed, flagNames);
   }
 
+  async loadActivations() {
+    const rows = await this.FlagActivation.findAll();
+    return new Map(
+      rows.map((row) => [
+        activationKey(row.playerID, row.flagID),
+        {
+          playerID: row.playerID,
+          flagID: row.flagID,
+          activeSince: row.activeSince,
+          active: row.active
+        }
+      ])
+    );
+  }
+
+  async saveActivations(previousActivations, activations) {
+    for (const [key, activation] of activations) {
+      const previous = previousActivations.get(key);
+      if (
+        previous?.active === activation.active &&
+        previous?.activeSince === activation.activeSince
+      )
+        continue;
+      await this.FlagActivation.upsert(activation);
+    }
+  }
+
   describe(entry, flagNames) {
     return `${flagNames[entry.flagID] ?? entry.flagID} from ${
       entry.playerName
-    } (BattleMetrics player ${entry.playerID}, added ${entry.addedAt})`;
+    } (BattleMetrics player ${entry.playerID}, active since ${entry.activeSince})`;
   }
 
   responseDetails(error) {
@@ -169,7 +237,7 @@ export default class BattleMetricsFlagExpiry extends DiscordBasePlugin {
           entry.playerID
         }) · ${escapeMarkdown(
           flagNames[entry.flagID] ?? entry.flagID
-        )} · added ${entry.addedAt.slice(0, 10)}`
+        )} · since ${entry.activeSince.slice(0, 10)}`
     );
 
     const descriptions = [];

@@ -2,13 +2,15 @@ import assert from 'assert';
 import http from 'http';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
-import BattleMetricsFlagClient, {
-  selectExpiredFlags
-} from '../squad-server/plugins/battlemetrics-flag-expiry/flag-client.js';
+import BattleMetricsFlagClient from '../squad-server/plugins/battlemetrics-flag-expiry/flag-client.js';
+import {
+  activationKey,
+  selectExpiredFlags,
+  trackActivations
+} from '../squad-server/plugins/battlemetrics-flag-expiry/expiry.js';
 
 const RESTRICTION_FLAG = 'restriction-flag';
 const BAN_RECORD_FLAG = 'ban-record-flag';
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const flagRecord = (id, playerID, flagID, addedAt, removedAt = null) => ({
   type: 'flagPlayer',
@@ -115,25 +117,49 @@ describe('BattleMetricsFlagClient', () => {
   });
 });
 
+describe('trackActivations', () => {
+  const now = Date.parse('2026-10-16T00:00:00.000Z');
+  const entry = { playerID: '1', flagID: RESTRICTION_FLAG, addedAt: '2025-01-01T00:00:00.000Z' };
+  const key = activationKey('1', RESTRICTION_FLAG);
+
+  it('uses addedAt for a flag seen for the first time', () => {
+    const { activeEntries } = trackActivations(new Map(), [entry], now);
+    assert.strictEqual(activeEntries[0].activeSince, entry.addedAt);
+  });
+
+  it('keeps the earlier activeSince while the flag stays active', () => {
+    const previous = new Map([
+      [key, { ...entry, activeSince: '2026-10-01T00:00:00.000Z', active: true }]
+    ]);
+    const { activeEntries } = trackActivations(previous, [entry], now);
+    assert.strictEqual(activeEntries[0].activeSince, '2026-10-01T00:00:00.000Z');
+  });
+
+  it('counts a flag added again after it was removed from this check', () => {
+    // BattleMetrics returns the first addedAt again after a re-add.
+    const previous = new Map([[key, { ...entry, activeSince: entry.addedAt, active: false }]]);
+    const { activeEntries } = trackActivations(previous, [entry], now);
+    assert.strictEqual(activeEntries[0].activeSince, new Date(now).toISOString());
+  });
+
+  it('marks flags that are no longer listed as inactive', () => {
+    const previous = new Map([[key, { ...entry, activeSince: entry.addedAt, active: true }]]);
+    const { activations } = trackActivations(previous, [], now);
+    assert.strictEqual(activations.get(key).active, false);
+  });
+});
+
 describe('selectExpiredFlags', () => {
   const now = Date.parse('2026-10-16T00:00:00.000Z');
 
-  it('selects flags older than the maximum age', () => {
+  it('selects flags active for longer than the maximum age', () => {
     const entries = [
-      { playerID: '1', flagID: RESTRICTION_FLAG, addedAt: '2026-10-05T00:00:00.000Z' },
-      { playerID: '2', flagID: RESTRICTION_FLAG, addedAt: '2026-10-07T00:00:00.000Z' }
+      { playerID: '1', flagID: RESTRICTION_FLAG, activeSince: '2026-10-05T00:00:00.000Z' },
+      { playerID: '2', flagID: RESTRICTION_FLAG, activeSince: '2026-10-07T00:00:00.000Z' }
     ];
     assert.deepStrictEqual(
-      selectExpiredFlags(entries, 10, now).map((entry) => entry.playerID),
+      selectExpiredFlags(entries, 10, now).map((selected) => selected.playerID),
       ['1']
     );
-  });
-
-  it('uses the newest record when a player holds the same flag twice', () => {
-    const entries = [
-      { playerID: '1', flagID: RESTRICTION_FLAG, addedAt: '2026-01-01T00:00:00.000Z' },
-      { playerID: '1', flagID: RESTRICTION_FLAG, addedAt: new Date(now - DAY_MS).toISOString() }
-    ];
-    assert.deepStrictEqual(selectExpiredFlags(entries, 10, now), []);
   });
 });
