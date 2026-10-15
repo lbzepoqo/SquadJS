@@ -346,8 +346,8 @@ export default class DiscordSeedingAnnouncement extends DiscordBasePlugin {
     }
 
     if (playerCount === 0) {
+      if (!this.armed) this.verbose(1, 'Seeding announcement armed by schedule.');
       this.armed = true;
-      this.verbose(1, 'Seeding announcement armed by schedule.');
       return true;
     }
 
