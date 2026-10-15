@@ -614,6 +614,7 @@
       "plugin": "BattleMetricsFlagExpiry",
       "enabled": false,
       "discordClient": "discord",
+      "flagStore": "sqlite",
       "channelID": "",
       "battlemetricsToken": "",
       "flagIDs": [],

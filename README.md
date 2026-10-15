@@ -2315,6 +2315,11 @@ Grafana:
            <p>Discord connector name.</p>
            <h6>Default</h6>
            <pre><code>discord</code></pre></li>
+<li><h4>flagStore (Required)</h4>
+           <h6>Description</h6>
+           <p>Sequelize connector name. Stores since when each flag is active, because BattleMetrics keeps the first added time when a removed flag is added again.</p>
+           <h6>Default</h6>
+           <pre><code>sqlite</code></pre></li>
 <li><h4>channelID</h4>
            <h6>Description</h6>
            <p>The ID of the channel to report removed flags to. Leave empty to only log them.</p>
@@ -2346,7 +2351,7 @@ Grafana:
            <pre><code>3600000</code></pre></li>
 <li><h4>dryRun</h4>
            <h6>Description</h6>
-           <p>Only log the flags that would be removed, without removing them or posting to Discord.</p>
+           <p>Only log the flags that would be removed, without removing them or posting to Discord. The plugin still records since when each flag is active.</p>
            <h6>Default</h6>
            <pre><code>true</code></pre></li>
 <li><h4>color</h4>
