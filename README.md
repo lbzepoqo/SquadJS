@@ -54,7 +54,7 @@ Passwords and tokens can be kept out of the config file. Write the value as a re
   ```json
     "rconPassword": { "secret": "RCON_PASSWORD" }
   ```
-SquadJS reads the secret from the environment variable of that name or, if it is not set, from `secrets.json` in the SquadJS folder:
+SquadJS reads the secret from the environment variable of that name or, if it is not set or empty, from `secrets.json` in the SquadJS folder:
   ```json
     {
       "RCON_PASSWORD": "password"
