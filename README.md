@@ -50,6 +50,18 @@ SquadJS can be configured via a JSON configuration file which, by default, is lo
 
 The config file needs to be valid JSON syntax. If an error is thrown saying the config cannot be parsed then try putting the config into a JSON syntax checker (there's plenty to choose from that can be found via Google).
 
+Passwords and tokens can be kept out of the config file. Write the value as a reference to a secret instead, anywhere in the config:
+  ```json
+    "rconPassword": { "secret": "RCON_PASSWORD" }
+  ```
+SquadJS reads the secret from the environment variable of that name or, if it is not set, from `secrets.json` in the SquadJS folder:
+  ```json
+    {
+      "RCON_PASSWORD": "password"
+    }
+  ```
+SquadJS does not start if a referenced secret is missing. `secrets.json` is in `.gitignore`.
+
 <details>
   <summary>Server</summary>
 
