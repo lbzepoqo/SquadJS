@@ -65,7 +65,7 @@
       "whitelisterApiUrl": "",
       "whitelisterApiKey": "",
       "useMySquadStats": true,
-      "notLinkedMessage": "No game account is linked to this Discord account. Link it at mysquadstats.com, then try again.",
+      "linkUrl": "https://mysquadstats.com/link",
       "leaderboardMinimumDeaths": 20,
       "leaderboardRefreshInterval": 21600000
     },

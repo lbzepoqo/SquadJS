@@ -1,4 +1,9 @@
-import { ApplicationCommandOptionType, AttachmentBuilder, MessageFlags } from 'discord.js';
+import {
+  ApplicationCommandOptionType,
+  AttachmentBuilder,
+  escapeMarkdown,
+  MessageFlags
+} from 'discord.js';
 
 import DiscordBasePlugin from './discord-base-plugin.js';
 import LinkResolver from './discord-player-stats/link-resolver.js';
@@ -70,11 +75,11 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         description: 'Look up the account link on MySquadStats when the Whitelister has none.',
         default: true
       },
-      notLinkedMessage: {
+      linkUrl: {
         required: false,
-        description: 'Reply, visible only to the user, when no linked game account is found.',
-        default:
-          'No game account is linked to this Discord account. Link it at mysquadstats.com, then try again.'
+        description:
+          'Page where players link their game account, shown when no linked account is found.',
+        default: 'https://mysquadstats.com/link'
       },
       leaderboardMinimumDeaths: {
         required: false,
@@ -197,14 +202,27 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
 
     const member = interaction.options.getUser('member');
     const discordUser = member ?? interaction.user;
+    const memberName =
+      member &&
+      escapeMarkdown(interaction.options.getMember('member')?.displayName ?? member.displayName);
     try {
+      if (member?.bot) {
+        await interaction.reply({
+          content: `${memberName} is a bot and has no game account.`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
       // Discord needs a first answer within 3 seconds, and the account lookups can take longer.
       await interaction.deferReply();
       const link = await this.linkResolver.resolve(discordUser.id);
       if (!link) {
+        // Angle brackets stop Discord from adding a link preview.
+        const linkUrl = `<${this.options.linkUrl}>`;
         const reply = member
-          ? `${member.username} has no linked game account.`
-          : this.options.notLinkedMessage;
+          ? `**${memberName}** has no linked game account yet. They can link it at ${linkUrl}.`
+          : `Your Discord account has no linked game account yet. Link it at ${linkUrl}, then run /${this.options.commandName} again.`;
         // The deferred reply is public, so it is replaced by a message only the user sees.
         await interaction.deleteReply();
         await interaction.followUp({ content: reply, flags: MessageFlags.Ephemeral });

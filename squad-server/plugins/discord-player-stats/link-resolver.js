@@ -4,7 +4,8 @@ const REQUEST_TIMEOUT_MS = 10000;
 
 /**
  * Finds the steamID linked to a Discord user: Squad Whitelister first, then MySquadStats.
- * Results are cached for `cacheMs`, since the Whitelister allows 50 requests per minute.
+ * Results are cached for `cacheMs`, since the Whitelister allows 50 requests per minute. A miss is
+ * cached only for `missCacheMs`, so a player who links and retries right away is found.
  */
 export default class LinkResolver {
   constructor({
@@ -12,12 +13,14 @@ export default class LinkResolver {
     whitelisterApiKey,
     useMySquadStats = true,
     cacheMs = 300000,
+    missCacheMs = 30000,
     log
   }) {
     this.whitelisterApiUrl = whitelisterApiUrl?.replace(/\/+$/, '');
     this.whitelisterApiKey = whitelisterApiKey;
     this.useMySquadStats = useMySquadStats;
     this.cacheMs = cacheMs;
+    this.missCacheMs = missCacheMs;
     this.log = log ?? (() => {});
     this.cache = new Map();
   }
@@ -29,7 +32,10 @@ export default class LinkResolver {
 
     const link =
       (await this.fromWhitelister(discordUserID)) ?? (await this.fromMySquadStats(discordUserID));
-    this.cache.set(discordUserID, { link, expires: Date.now() + this.cacheMs });
+    this.cache.set(discordUserID, {
+      link,
+      expires: Date.now() + (link ? this.cacheMs : this.missCacheMs)
+    });
     return link;
   }
 

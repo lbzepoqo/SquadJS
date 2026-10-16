@@ -294,11 +294,11 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <p>Look up the account link on MySquadStats when the Whitelister has none.</p>
            <h6>Default</h6>
            <pre><code>true</code></pre></li>
-<li><h4>notLinkedMessage</h4>
+<li><h4>linkUrl</h4>
            <h6>Description</h6>
-           <p>Reply, visible only to the user, when no linked game account is found.</p>
+           <p>Page where players link their game account, shown when no linked account is found.</p>
            <h6>Default</h6>
-           <pre><code>No game account is linked to this Discord account. Link it at mysquadstats.com, then try again.</code></pre></li>
+           <pre><code>https://mysquadstats.com/link</code></pre></li>
 <li><h4>leaderboardMinimumDeaths</h4>
            <h6>Description</h6>
            <p>Players with fewer deaths are not ranked, so short visits do not count in "Top X%".</p>
