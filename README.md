@@ -249,6 +249,69 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
         </details>
 
 <details>
+          <summary>DiscordPlayerStats</summary>
+          <h2>DiscordPlayerStats</h2>
+          <p>The <code>DiscordPlayerStats</code> plugin adds a Discord slash command that answers with an image card of a player's kills, deaths, revives and rankings on this server, read from the <code>DBLog</code> database. The Discord account is matched to the game account through the Squad Whitelister and then MySquadStats. Requires <code>DBLog</code> and a bot invited with the <code>applications.commands</code> scope.</p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>database (Required)</h4>
+           <h6>Description</h6>
+           <p>The Sequelize connector that DBLog writes to.</p>
+           <h6>Default</h6>
+           <pre><code>mysql</code></pre></li>
+<li><h4>guildID (Required)</h4>
+           <h6>Description</h6>
+           <p>ID of the Discord server where the command is registered.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>commandName</h4>
+           <h6>Description</h6>
+           <p>Name of the slash command.</p>
+           <h6>Default</h6>
+           <pre><code>stats</code></pre></li>
+<li><h4>cardTitle</h4>
+           <h6>Description</h6>
+           <p>Title at the top of the card, for example the server name.</p>
+           <h6>Default</h6>
+           <pre><code>Player stats</code></pre></li>
+<li><h4>whitelisterApiUrl</h4>
+           <h6>Description</h6>
+           <p>Base URL of the Squad Whitelister. Leave empty to skip the Whitelister lookup.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>whitelisterApiKey</h4>
+           <h6>Description</h6>
+           <p>Whitelister API key with read access to players.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>useMySquadStats</h4>
+           <h6>Description</h6>
+           <p>Look up the account link on MySquadStats when the Whitelister has none.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>notLinkedMessage</h4>
+           <h6>Description</h6>
+           <p>Reply, visible only to the user, when no linked game account is found.</p>
+           <h6>Default</h6>
+           <pre><code>No game account is linked to this Discord account. Link it at mysquadstats.com, then try again.</code></pre></li>
+<li><h4>leaderboardMinimumDeaths</h4>
+           <h6>Description</h6>
+           <p>Players with fewer deaths are not ranked, so short visits do not count in "Top X%".</p>
+           <h6>Default</h6>
+           <pre><code>20</code></pre></li>
+<li><h4>leaderboardRefreshInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between two rebuilds of the rankings.</p>
+           <h6>Default</h6>
+           <pre><code>21600000</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordPlaceholder</summary>
           <h2>DiscordPlaceholder</h2>
           <p>The <code>DiscordPlaceholder</code> plugin allows you to make your bot create placeholder messages that can be used when configuring other plugins.</p>

@@ -55,6 +55,21 @@
       "color": 16761867
     },
     {
+      "plugin": "DiscordPlayerStats",
+      "enabled": false,
+      "discordClient": "discord",
+      "database": "mysql",
+      "guildID": "",
+      "commandName": "stats",
+      "cardTitle": "Player stats",
+      "whitelisterApiUrl": "",
+      "whitelisterApiKey": "",
+      "useMySquadStats": true,
+      "notLinkedMessage": "No game account is linked to this Discord account. Link it at mysquadstats.com, then try again.",
+      "leaderboardMinimumDeaths": 20,
+      "leaderboardRefreshInterval": 21600000
+    },
+    {
       "plugin": "DiscordPlaceholder",
       "enabled": true,
       "discordClient": "discord",
