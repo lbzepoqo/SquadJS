@@ -76,7 +76,7 @@ export function renderCard(stats, { title, since, ranks = {} }) {
   context.fillText(title.toUpperCase(), PADDING, 48);
 
   context.fillStyle = COLORS.ink;
-  const name = stats.name || stats.steamID;
+  const name = stats.name?.trim() || stats.steamID;
   fitText(context, name, WIDTH - 2 * PADDING, 44);
   context.fillText(name, PADDING, 100);
 
