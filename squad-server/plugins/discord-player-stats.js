@@ -21,7 +21,6 @@ const FIRST_LEADERBOARD_DELAY_MS = 60 * 1000;
 // above 2^31 - 1 ms at once.
 const MINIMUM_REFRESH_MS = 10 * 60 * 1000;
 const MAXIMUM_REFRESH_MS = 2147483647;
-const BACKGROUND_EVENTS = ['threadCreate', 'threadUpdate', 'threadDelete'];
 
 function boundedInterval(milliseconds) {
   return Math.min(MAXIMUM_REFRESH_MS, Math.max(MINIMUM_REFRESH_MS, Number(milliseconds) || 0));
@@ -147,7 +146,6 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.leaderboardAttempted = false;
     this.renderCard = null;
     this.backgrounds = null;
-    this.backgroundInterval = null;
     this.mounted = false;
     this.onInteraction = this.onInteraction.bind(this);
     this.refreshLeaderboard = this.refreshLeaderboard.bind(this);
@@ -177,27 +175,17 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       channelID: this.options.backgroundChannelID,
       tagID: this.options.backgroundTagID,
       maxBytes: this.options.backgroundMaxFileSize,
+      refreshInterval: boundedInterval(this.options.backgroundRefreshInterval),
       log: (message) => this.verbose(1, message)
     });
-    for (const event of BACKGROUND_EVENTS)
-      this.options.discordClient.on(event, this.backgrounds.onThreadEvent);
-    this.backgrounds.refresh();
-    this.backgroundInterval = setInterval(
-      () => this.backgrounds.refresh(),
-      boundedInterval(this.options.backgroundRefreshInterval)
-    );
+    this.backgrounds.start();
   }
 
   async unmount() {
     this.mounted = false;
     this.options.discordClient.removeListener('interactionCreate', this.onInteraction);
     clearTimeout(this.leaderboardTimeout);
-    if (this.backgrounds) {
-      for (const event of BACKGROUND_EVENTS)
-        this.options.discordClient.removeListener(event, this.backgrounds.onThreadEvent);
-      this.backgrounds.stop();
-      clearInterval(this.backgroundInterval);
-    }
+    this.backgrounds?.stop();
   }
 
   async registerCommand() {
@@ -314,10 +302,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       if (!this.leaderboardAttempted) await this.refreshLeaderboard();
       else if (this.leaderboardBuild) await this.leaderboardBuild;
       const stats = await fetchPlayerStats(this.options.database, link.steamID);
-      const background = await this.backgrounds?.pick().catch((error) => {
-        this.verbose(1, `Could not load a background photo: ${error.message}`);
-        return null;
-      });
+      const background = await this.backgrounds?.pick();
       const card = this.renderCard(stats, {
         title: this.options.cardTitle,
         since: this.statsSince ? formatDate(this.statsSince) : 'the first recorded match',

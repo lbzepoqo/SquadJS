@@ -1,48 +1,27 @@
-import { createCanvas, loadImage } from 'canvas';
+import { loadImage } from 'canvas';
 
-import { CARD_HEIGHT, CARD_WIDTH } from './card.js';
+import { cropToCard } from './card.js';
 
 // node-canvas decodes these; WebP and other types are skipped.
 const DECODABLE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif']);
 const EVENT_REFRESH_DELAY_MS = 5 * 1000;
+const THREAD_EVENTS = ['threadCreate', 'threadUpdate', 'threadDelete'];
 
 /**
- * The image attachment of a post's starter message to use as a background, or null when the post has
- * none that fits. `skipped` collects why an image was passed over.
+ * The image attachment of a post's starter message to use as a background (null when the post has none
+ * that fits), and why other images were passed over.
  */
-export function backgroundAttachment(message, maxBytes, skipped = []) {
+export function backgroundAttachment(message, maxBytes) {
+  const reasons = [];
   for (const attachment of message?.attachments?.values() ?? []) {
     if (!attachment.contentType?.startsWith('image/')) continue;
     if (!DECODABLE_TYPES.has(attachment.contentType.split(';')[0]))
-      skipped.push(`${attachment.name} is ${attachment.contentType}, use PNG or JPEG`);
+      reasons.push(`${attachment.name} is ${attachment.contentType}, use PNG or JPEG`);
     else if (attachment.size > maxBytes)
-      skipped.push(`${attachment.name} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`);
-    else return attachment;
+      reasons.push(`${attachment.name} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`);
+    else return { attachment, reasons };
   }
-  return null;
-}
-
-// Scales the photo to cover the whole card and crops the overflow evenly from both sides.
-async function coverCrop(imageBuffer) {
-  const image = await loadImage(imageBuffer);
-  const scale = Math.max(CARD_WIDTH / image.width, CARD_HEIGHT / image.height);
-  const sourceWidth = CARD_WIDTH / scale;
-  const sourceHeight = CARD_HEIGHT / scale;
-  const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
-  canvas
-    .getContext('2d')
-    .drawImage(
-      image,
-      (image.width - sourceWidth) / 2,
-      (image.height - sourceHeight) / 2,
-      sourceWidth,
-      sourceHeight,
-      0,
-      0,
-      CARD_WIDTH,
-      CARD_HEIGHT
-    );
-  return canvas.toBuffer('image/jpeg', { quality: 0.9 });
+  return { attachment: null, reasons };
 }
 
 /**
@@ -52,17 +31,31 @@ async function coverCrop(imageBuffer) {
  * expire, so each photo is downloaded once, when its post is first seen.
  */
 export default class BackgroundLibrary {
-  constructor({ client, channelID, tagID, maxBytes, log }) {
+  constructor({ client, channelID, tagID, maxBytes, refreshInterval, log }) {
     this.client = client;
     this.channelID = channelID;
     this.tagID = tagID;
     this.maxBytes = maxBytes;
+    this.refreshInterval = refreshInterval;
     this.log = log;
     this.backgrounds = new Map();
     this.skippedThreads = new Set();
     this.refreshing = null;
     this.eventTimeout = null;
+    this.refreshTimer = null;
     this.onThreadEvent = this.onThreadEvent.bind(this);
+  }
+
+  start() {
+    for (const event of THREAD_EVENTS) this.client.on(event, this.onThreadEvent);
+    this.refresh();
+    this.refreshTimer = setInterval(() => this.refresh(), this.refreshInterval);
+  }
+
+  stop() {
+    for (const event of THREAD_EVENTS) this.client.removeListener(event, this.onThreadEvent);
+    clearTimeout(this.eventTimeout);
+    clearInterval(this.refreshTimer);
   }
 
   // Thread events only bring the next refresh forward; the refresh reads the channel itself, because
@@ -72,10 +65,6 @@ export default class BackgroundLibrary {
     if (thread.parentId !== this.channelID) return;
     clearTimeout(this.eventTimeout);
     this.eventTimeout = setTimeout(() => this.refresh(), EVENT_REFRESH_DELAY_MS);
-  }
-
-  stop() {
-    clearTimeout(this.eventTimeout);
   }
 
   refresh() {
@@ -88,22 +77,28 @@ export default class BackgroundLibrary {
     return this.refreshing;
   }
 
-  async readChannel() {
+  // Posts are archived after a time without activity, so archived posts are read as well. Keyed by ID,
+  // because a post archived between the two requests can appear in both.
+  async fetchPosts() {
     const channel = await this.client.channels.fetch(this.channelID);
-    const threads = [...(await channel.threads.fetchActive(false)).threads.values()];
+    const posts = new Map((await channel.threads.fetchActive(false)).threads);
     let before;
-    let hasMore = true;
-    while (hasMore) {
-      const page = await channel.threads.fetchArchived(
+    for (;;) {
+      const archived = await channel.threads.fetchArchived(
         { type: 'public', before, limit: 100 },
         false
       );
-      threads.push(...page.threads.values());
-      hasMore = page.hasMore && page.threads.size > 0;
-      before = page.threads.last()?.archivedAt;
+      for (const [id, thread] of archived.threads) posts.set(id, thread);
+      if (!archived.hasMore || archived.threads.size === 0) break;
+      before = archived.threads.last().archivedAt;
     }
+    return [...posts.values()];
+  }
 
-    const approved = threads.filter((thread) => thread.appliedTags.includes(this.tagID));
+  async readChannel() {
+    const approved = (await this.fetchPosts()).filter((thread) =>
+      thread.appliedTags.includes(this.tagID)
+    );
     const approvedIDs = new Set(approved.map((thread) => thread.id));
     for (const threadID of this.backgrounds.keys())
       if (!approvedIDs.has(threadID)) this.backgrounds.delete(threadID);
@@ -123,28 +118,31 @@ export default class BackgroundLibrary {
 
   async addPost(thread) {
     const message = await thread.fetchStarterMessage();
-    const skipped = [];
-    const attachment = backgroundAttachment(message, this.maxBytes, skipped);
+    const { attachment, reasons } = backgroundAttachment(message, this.maxBytes);
     if (!attachment) {
-      const reason = skipped.length > 0 ? skipped.join('; ') : 'no image';
       // Remembered so the log line is written once; an edited post is read again after a restart.
       this.skippedThreads.add(thread.id);
-      this.log(`Skipped background post "${thread.name}": ${reason}.`);
+      this.log(`Skipped background post "${thread.name}": ${reasons.join('; ') || 'no image'}.`);
       return;
     }
     const response = await fetch(attachment.url);
     if (!response.ok) throw new Error(`download failed with HTTP ${response.status}`);
     this.backgrounds.set(thread.id, {
-      image: await coverCrop(Buffer.from(await response.arrayBuffer())),
+      image: await cropToCard(Buffer.from(await response.arrayBuffer())),
       credit: message.member?.displayName ?? message.author.displayName
     });
   }
 
-  /** A random approved photo as `{ image, credit }`, or null when there is none. */
+  /** A random approved photo as `{ image, credit }`, or null when there is none or it cannot be read. */
   async pick() {
     const choices = [...this.backgrounds.values()];
     if (choices.length === 0) return null;
     const { image, credit } = choices[Math.floor(Math.random() * choices.length)];
-    return { image: await loadImage(image), credit };
+    try {
+      return { image: await loadImage(image), credit };
+    } catch (error) {
+      this.log(`Could not load a background photo: ${error.message}`);
+      return null;
+    }
   }
 }

@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createCanvas, registerFont } from 'canvas';
+import { createCanvas, loadImage, registerFont } from 'canvas';
 
 import { RANKED_MEASURES, weaponLabel } from './stats-query.js';
 
@@ -273,6 +273,32 @@ function drawRadar(context, x, y, width, height, { ranks, rankedPlayers, unranke
     context.fillText(unrankedNote, centerX, centerY + 22);
   }
   context.textAlign = 'left';
+}
+
+/**
+ * A photo scaled to cover the whole card, with the overflow cropped evenly from both sides, as a JPEG
+ * buffer ready to be drawn by `renderCard`.
+ */
+export async function cropToCard(imageBuffer) {
+  const image = await loadImage(imageBuffer);
+  const scale = Math.max(CARD_WIDTH / image.width, CARD_HEIGHT / image.height);
+  const sourceWidth = CARD_WIDTH / scale;
+  const sourceHeight = CARD_HEIGHT / scale;
+  const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
+  canvas
+    .getContext('2d')
+    .drawImage(
+      image,
+      (image.width - sourceWidth) / 2,
+      (image.height - sourceHeight) / 2,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      CARD_WIDTH,
+      CARD_HEIGHT
+    );
+  return canvas.toBuffer('image/jpeg', { quality: 0.9 });
 }
 
 /**

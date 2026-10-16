@@ -144,13 +144,13 @@ describe('DiscordPlayerStats backgrounds', () => {
         ['4', attachment('tank.jpg', 'image/jpeg', 20)]
       ])
     };
-    const skipped = [];
+    const { attachment: chosen, reasons } = backgroundAttachment(message, 30);
 
-    assert.strictEqual(backgroundAttachment(message, 30, skipped).name, 'tank.jpg');
-    assert.deepStrictEqual(skipped, [
+    assert.strictEqual(chosen.name, 'tank.jpg');
+    assert.deepStrictEqual(reasons, [
       'shot.webp is image/webp, use PNG or JPEG',
       'huge.png is larger than 0 MB'
     ]);
-    assert.strictEqual(backgroundAttachment({ attachments: new Map() }, 30), null);
+    assert.strictEqual(backgroundAttachment({ attachments: new Map() }, 30).attachment, null);
   });
 });
