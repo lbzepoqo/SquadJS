@@ -5,12 +5,22 @@ import { createCanvas, loadImage, registerFont } from 'canvas';
 import { RANKED_MEASURES, weaponLabel } from './stats-query.js';
 
 // The fonts are bundled because the server container may have none installed. Characters Oswald
-// lacks, such as symbols in clan tags, fall back to the registered DejaVu.
+// lacks fall back to the other registered fonts: DejaVu for symbols in clan tags, Noto for Chinese,
+// Japanese, Korean and Thai names and for emoji (together about 9% of the names on our server).
 const fontFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
 registerFont(path.join(fontFolder, 'Oswald-Medium.ttf'), { family: 'CardDisplay', weight: '500' });
 registerFont(path.join(fontFolder, 'Oswald-Bold.ttf'), { family: 'CardDisplay', weight: 'bold' });
 registerFont(path.join(fontFolder, 'DejaVuSans.ttf'), { family: 'CardSans' });
 registerFont(path.join(fontFolder, 'DejaVuSans-Bold.ttf'), { family: 'CardSans', weight: 'bold' });
+registerFont(path.join(fontFolder, 'NotoSansCJKsc-Bold.otf'), {
+  family: 'CardCJK',
+  weight: 'bold'
+});
+registerFont(path.join(fontFolder, 'NotoSansThai-Bold.ttf'), {
+  family: 'CardThai',
+  weight: 'bold'
+});
+registerFont(path.join(fontFolder, 'NotoEmoji.ttf'), { family: 'CardEmoji' });
 
 export const CARD_WIDTH = 1000;
 export const CARD_HEIGHT = 560;
