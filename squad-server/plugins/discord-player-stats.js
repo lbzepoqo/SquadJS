@@ -192,6 +192,13 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     }
   }
 
+  // Why the card has no ranks, or undefined when it has them.
+  unrankedNote(stats) {
+    if (!this.leaderboard) return 'Rankings are not built yet';
+    const missing = this.options.leaderboardMinimumDeaths - stats.deaths;
+    if (missing > 0) return `${missing} more ${missing === 1 ? 'death' : 'deaths'} needed`;
+  }
+
   async onInteraction(interaction) {
     if (
       !interaction.isChatInputCommand() ||
@@ -235,7 +242,9 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       const card = renderCard(stats, {
         title: this.options.cardTitle,
         since: this.statsSince ? formatDate(this.statsSince) : 'the first recorded match',
-        ranks: rankPlayer(this.leaderboard, stats, this.options.leaderboardMinimumDeaths)
+        ranks: rankPlayer(this.leaderboard, stats, this.options.leaderboardMinimumDeaths),
+        rankedPlayers: this.leaderboard?.size,
+        unrankedNote: this.unrankedNote(stats)
       });
       await interaction.editReply({
         files: [new AttachmentBuilder(card, { name: 'stats.png' })]

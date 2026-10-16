@@ -73,8 +73,9 @@ describe('DiscordPlayerStats queries', () => {
         revived: stats.revived,
         teamkills: stats.teamkills,
         matches: stats.matches,
+        deathMatches: stats.deathMatches,
         kd: stats.kd,
-        topWeapon: stats.topWeapon
+        topWeapons: stats.topWeapons
       },
       {
         name: 'PSG - Ignis ®',
@@ -85,8 +86,12 @@ describe('DiscordPlayerStats queries', () => {
         revived: 1,
         teamkills: 1,
         matches: 3,
+        deathMatches: 2,
         kd: 0.5,
-        topWeapon: { weapon: 'BP_M4_M68', wounds: 2 }
+        topWeapons: [
+          { weapon: 'BP_M4_M68', wounds: 2 },
+          { weapon: 'BP_M9', wounds: 1 }
+        ]
       }
     );
   });
@@ -96,19 +101,32 @@ describe('DiscordPlayerStats queries', () => {
 
     assert.strictEqual(board.size, 1);
     assert.deepStrictEqual(board.kills, [1]);
+    assert.deepStrictEqual(board.wounds, [3]);
+    assert.deepStrictEqual(board.woundsPerMatch, [1.5]);
+    assert.deepStrictEqual(board.revivesPerMatch, [0.5]);
     assert.strictEqual(topPercent([0, 0, 1, 5, 9], 5), 40);
     assert.strictEqual(topPercent([0, 0, 1, 5, 9], 9), 20);
     assert.strictEqual(topPercent([], 3), null);
   });
 
   it('gives no ranks to a player below the death minimum', () => {
-    const board = { kills: [1, 2], kd: [0.5, 1], revives: [0, 3] };
-    const newcomer = { kills: 5, kd: 5, revives: 0, deaths: 1 };
+    const board = {
+      kills: [1, 2],
+      wounds: [2, 4],
+      woundsPerMatch: [1, 2],
+      kd: [0.5, 1],
+      revivesPerMatch: [0, 1],
+      revives: [0, 3]
+    };
+    const newcomer = { kills: 5, deaths: 1, wounds: 3, revives: 0, deathMatches: 1 };
 
     assert.deepStrictEqual(rankPlayer(board, newcomer, 20), {});
     assert.deepStrictEqual(rankPlayer(board, { ...newcomer, deaths: 20 }, 20), {
       kills: 1,
-      kd: 1,
+      wounds: 50,
+      woundsPerMatch: 1,
+      kd: 100,
+      revivesPerMatch: 100,
       revives: 100
     });
   });

@@ -2,135 +2,297 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, registerFont } from 'canvas';
 
-import { weaponLabel } from './stats-query.js';
+import { RANKED_MEASURES, weaponLabel } from './stats-query.js';
 
-// The fonts are bundled because the server container may have none installed.
+// The fonts are bundled because the server container may have none installed. Characters Oswald
+// lacks, such as symbols in clan tags, fall back to the registered DejaVu.
 const fontFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+registerFont(path.join(fontFolder, 'Oswald-Medium.ttf'), { family: 'CardDisplay', weight: '500' });
+registerFont(path.join(fontFolder, 'Oswald-Bold.ttf'), { family: 'CardDisplay', weight: 'bold' });
 registerFont(path.join(fontFolder, 'DejaVuSans.ttf'), { family: 'CardSans' });
 registerFont(path.join(fontFolder, 'DejaVuSans-Bold.ttf'), { family: 'CardSans', weight: 'bold' });
 
 const WIDTH = 1000;
 const HEIGHT = 560;
-const PADDING = 40;
+const PADDING = 36;
 const COLORS = {
-  surface: '#1a1a19',
-  tile: '#242422',
-  tileBorder: '#383835',
+  backgroundTop: '#262724',
+  backgroundBottom: '#121211',
+  panel: 'rgba(0, 0, 0, 0.38)',
+  panelBorder: 'rgba(255, 255, 255, 0.09)',
+  grid: 'rgba(255, 255, 255, 0.16)',
   ink: '#f0efec',
   inkSecondary: '#c3c2b7',
   muted: '#898781',
-  accent: '#3987e5',
-  highlight: '#199e70'
+  accent: '#d95926',
+  accentFill: 'rgba(217, 89, 38, 0.38)'
 };
 
-const number = (value) => Math.round(value).toLocaleString('en-US');
+const AXIS_LABELS = {
+  kills: ['Kills'],
+  wounds: ['Downs'],
+  woundsPerMatch: ['Downs', 'per match'],
+  kd: ['K/D'],
+  revivesPerMatch: ['Revives', 'per match'],
+  revives: ['Revives']
+};
+const RADAR_AXES = RANKED_MEASURES.map((measure) => ({ measure, lines: AXIS_LABELS[measure] }));
 
-function fitText(context, text, maxWidth, size, weight = 'bold') {
+const number = (value) => Math.round(value).toLocaleString('en-US');
+const font = (weight, size) => `${weight} ${size}px CardDisplay`;
+
+// Sets the largest font from `size` down to `minimumSize` that fits, then shortens the text if it still does not.
+function fitText(context, text, maxWidth, size, minimumSize, weight = 'bold') {
   let fontSize = size;
-  do {
-    context.font = `${weight} ${fontSize}px CardSans`;
+  context.font = font(weight, fontSize);
+  while (context.measureText(text).width > maxWidth && fontSize > minimumSize) {
     fontSize -= 2;
-  } while (context.measureText(text).width > maxWidth && fontSize > 12);
-  return text;
+    context.font = font(weight, fontSize);
+  }
+  let fitted = text;
+  while (context.measureText(fitted).width > maxWidth && fitted.length > 1)
+    fitted = `${fitted.slice(0, -2).trimEnd()}…`;
+  return fitted;
 }
 
-function drawTile(context, x, y, width, height, { label, value, note }) {
-  context.fillStyle = COLORS.tile;
-  context.strokeStyle = COLORS.tileBorder;
-  context.lineWidth = 2;
+function drawPanel(context, x, y, width, height) {
+  context.fillStyle = COLORS.panel;
+  context.strokeStyle = COLORS.panelBorder;
+  context.lineWidth = 1.5;
   context.beginPath();
-  context.roundRect(x, y, width, height, 12);
+  context.roundRect(x, y, width, height, 14);
   context.fill();
   context.stroke();
+}
 
-  context.fillStyle = COLORS.inkSecondary;
-  context.font = '20px CardSans';
-  context.fillText(label, x + 20, y + 36);
+function drawBackground(context) {
+  const gradient = context.createLinearGradient(0, 0, 0, HEIGHT);
+  gradient.addColorStop(0, COLORS.backgroundTop);
+  gradient.addColorStop(1, COLORS.backgroundBottom);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, WIDTH, HEIGHT);
 
-  context.fillStyle = COLORS.ink;
-  fitText(context, value, width - 40, 38);
-  context.fillText(value, x + 20, y + 84);
+  // A faint accent glow behind the radar.
+  const glow = context.createRadialGradient(778, 300, 0, 778, 300, 420);
+  glow.addColorStop(0, 'rgba(217, 89, 38, 0.16)');
+  glow.addColorStop(1, 'rgba(217, 89, 38, 0)');
+  context.fillStyle = glow;
+  context.fillRect(0, 0, WIDTH, HEIGHT);
 
-  if (note) {
-    context.fillStyle = COLORS.highlight;
-    context.font = 'bold 17px CardSans';
-    context.fillText(note, x + 20, y + 112);
+  context.fillStyle = COLORS.accent;
+  context.fillRect(0, 0, 8, HEIGHT);
+}
+
+function drawStatGrid(context, x, y, width, height, stats) {
+  drawPanel(context, x, y, width, height);
+  const columns = [
+    [
+      ['Kills', number(stats.kills)],
+      ['Deaths', number(stats.deaths)],
+      ['K/D', stats.kd.toFixed(2)],
+      ['Kills per match', stats.matches ? (stats.kills / stats.matches).toFixed(1) : '0.0']
+    ],
+    [
+      ['Downs', number(stats.wounds)],
+      ['Revives', number(stats.revives)],
+      ['Revived', number(stats.revived)],
+      ['Teamkills', number(stats.teamkills)]
+    ]
+  ];
+  const inset = 22;
+  const gap = 36;
+  const columnWidth = (width - 2 * inset - gap) / 2;
+  const rowHeight = (height - 24) / 4;
+  columns.forEach((rows, column) => {
+    const left = x + inset + column * (columnWidth + gap);
+    rows.forEach(([label, value], row) => {
+      const baseline = y + 12 + rowHeight * row + rowHeight / 2 + 11;
+      context.textAlign = 'left';
+      context.fillStyle = COLORS.inkSecondary;
+      context.font = font('500', 24);
+      context.fillText(label, left, baseline);
+      context.textAlign = 'right';
+      context.fillStyle = COLORS.ink;
+      context.font = font('bold', 32);
+      context.fillText(value, left + columnWidth, baseline + 1);
+    });
+  });
+  context.textAlign = 'left';
+}
+
+function drawWeapons(context, x, y, width, height, weapons) {
+  drawPanel(context, x, y, width, height);
+  context.fillStyle = COLORS.muted;
+  context.font = font('500', 18);
+  context.fillText('TOP WEAPONS BY DOWNS', x + 22, y + 32);
+
+  if (weapons.length === 0) {
+    context.fillStyle = COLORS.inkSecondary;
+    context.font = font('500', 24);
+    context.fillText('None yet', x + 22, y + 74);
+    return;
   }
+  const slotWidth = (width - 44) / 3;
+  weapons.forEach(({ weapon, wounds }, index) => {
+    const left = x + 22 + index * slotWidth;
+    context.fillStyle = COLORS.ink;
+    context.fillText(fitText(context, weaponLabel(weapon), slotWidth - 16, 24, 18), left, y + 70);
+    context.fillStyle = COLORS.inkSecondary;
+    context.font = font('500', 20);
+    context.fillText(`${number(wounds)} ${wounds === 1 ? 'down' : 'downs'}`, left, y + 98);
+  });
+}
+
+function radarPoint(centerX, centerY, radius, index, share) {
+  const angle = -Math.PI / 2 + (index * 2 * Math.PI) / RADAR_AXES.length;
+  return [centerX + Math.cos(angle) * radius * share, centerY + Math.sin(angle) * radius * share];
+}
+
+function tracePolygon(context, points) {
+  context.beginPath();
+  points.forEach(([pointX, pointY], index) =>
+    index === 0 ? context.moveTo(pointX, pointY) : context.lineTo(pointX, pointY)
+  );
+  context.closePath();
+}
+
+function drawRadarGrid(context, centerX, centerY, radius) {
+  // Rings at 25, 50, 75 and 100. The dashed 50 ring is the median player.
+  context.lineWidth = 1.5;
+  context.strokeStyle = COLORS.grid;
+  for (const share of [0.25, 0.5, 0.75, 1]) {
+    context.setLineDash(share === 0.5 ? [5, 5] : []);
+    tracePolygon(
+      context,
+      RADAR_AXES.map((axis, index) => radarPoint(centerX, centerY, radius, index, share))
+    );
+    context.stroke();
+  }
+  context.setLineDash([]);
+  context.beginPath();
+  RADAR_AXES.forEach((axis, index) => {
+    context.moveTo(centerX, centerY);
+    context.lineTo(...radarPoint(centerX, centerY, radius, index, 1));
+  });
+  context.stroke();
+}
+
+function drawRadarShape(context, centerX, centerY, radius, ranks) {
+  // "Top 9%" plots at 91, so the shape and the labels say the same thing.
+  const points = RADAR_AXES.map((axis, index) =>
+    radarPoint(centerX, centerY, radius, index, (100 - ranks[axis.measure]) / 100)
+  );
+  tracePolygon(context, points);
+  context.fillStyle = COLORS.accentFill;
+  context.fill();
+  context.strokeStyle = COLORS.accent;
+  context.lineWidth = 2.5;
+  context.lineJoin = 'round';
+  context.stroke();
+  for (const [pointX, pointY] of points) {
+    context.beginPath();
+    context.arc(pointX, pointY, 5, 0, 2 * Math.PI);
+    context.fillStyle = COLORS.accent;
+    context.fill();
+    context.strokeStyle = COLORS.backgroundBottom;
+    context.lineWidth = 2;
+    context.stroke();
+  }
+}
+
+// Each label is the measure's name, then "Top X%" when ranked, placed outside its spoke.
+function drawRadarLabels(context, centerX, centerY, radius, ranks, ranked) {
+  const lineHeight = 21;
+  RADAR_AXES.forEach((axis, index) => {
+    const [anchorX, anchorY] = radarPoint(centerX, centerY, radius + 12, index, 1);
+    const lines = axis.lines.map((text) => ({ text, size: 17, weight: '500' }));
+    if (ranked) lines.push({ text: `Top ${ranks[axis.measure]}%`, size: 21, weight: 'bold' });
+    const blockHeight = lines.length * lineHeight;
+    if (anchorX > centerX + 1) context.textAlign = 'left';
+    else if (anchorX < centerX - 1) context.textAlign = 'right';
+    else context.textAlign = 'center';
+    let top = anchorY - blockHeight / 2;
+    if (anchorY < centerY - radius) top = anchorY - blockHeight;
+    else if (anchorY > centerY + radius) top = anchorY;
+    lines.forEach(({ text, size, weight }, line) => {
+      context.fillStyle = weight === 'bold' ? COLORS.ink : COLORS.inkSecondary;
+      context.font = font(weight, size);
+      context.fillText(text, anchorX, top + (line + 1) * lineHeight - 4);
+    });
+  });
+  context.textAlign = 'left';
+}
+
+function drawRadar(context, x, y, width, height, { ranks, rankedPlayers, unrankedNote }) {
+  // An empty ranking (no regulars yet) gives null ranks, drawn like no ranking.
+  const ranked = RADAR_AXES.every((axis) => ranks[axis.measure] != null);
+  drawPanel(context, x, y, width, height);
+  context.fillStyle = COLORS.muted;
+  context.font = font('500', 18);
+  context.fillText('SERVER RANK', x + 22, y + 32);
+  context.fillStyle = COLORS.inkSecondary;
+  context.font = font('500', 17);
+  const subtitle = ranked ? `Among ${number(rankedPlayers)} regulars` : 'Among regular players';
+  context.fillText(subtitle, x + 22, y + 56);
+
+  const centerX = x + width / 2;
+  const centerY = y + 268;
+  const radius = 104;
+  drawRadarGrid(context, centerX, centerY, radius);
+  drawRadarLabels(context, centerX, centerY, radius, ranks, ranked);
+  if (ranked) {
+    drawRadarShape(context, centerX, centerY, radius, ranks);
+    return;
+  }
+  context.textAlign = 'center';
+  context.fillStyle = COLORS.ink;
+  context.font = font('bold', 24);
+  context.fillText('Not ranked yet', centerX, centerY - 4);
+  if (unrankedNote) {
+    context.fillStyle = COLORS.inkSecondary;
+    context.font = font('500', 18);
+    context.fillText(unrankedNote, centerX, centerY + 22);
+  }
+  context.textAlign = 'left';
 }
 
 /**
  * Renders the stats card as a PNG buffer.
- * `ranks` holds "top X%" values for kills, kd and revives (null when no ranking is available).
+ * `ranks` holds the "Top X%" value of each ranked measure, empty when the player has no ranking;
+ * `unrankedNote` then says why.
  */
-export function renderCard(stats, { title, since, ranks = {} }) {
+export function renderCard(stats, { title, since, ranks = {}, rankedPlayers = 0, unrankedNote }) {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const context = canvas.getContext('2d');
+  drawBackground(context);
 
-  context.fillStyle = COLORS.surface;
-  context.fillRect(0, 0, WIDTH, HEIGHT);
-  context.fillStyle = COLORS.accent;
-  context.fillRect(0, 0, 8, HEIGHT);
-
+  const leftWidth = 540;
   context.fillStyle = COLORS.muted;
-  context.font = 'bold 18px CardSans';
-  context.fillText(title.toUpperCase(), PADDING, 48);
+  context.font = font('500', 20);
+  context.fillText(title.toUpperCase(), PADDING, 50);
 
   context.fillStyle = COLORS.ink;
   const name = stats.name?.trim() || stats.steamID;
-  fitText(context, name, WIDTH - 2 * PADDING, 44);
-  context.fillText(name, PADDING, 100);
+  context.fillText(fitText(context, name, leftWidth, 60, 32), PADDING, 118);
 
   context.fillStyle = COLORS.inkSecondary;
-  context.font = '20px CardSans';
-  context.fillText(`${number(stats.matches)} matches on this server since ${since}`, PADDING, 136);
+  context.font = font('500', 22);
+  context.fillText(`${number(stats.matches)} matches on this server since ${since}`, PADDING, 154);
 
-  const rankNote = (rank) => (rank ? `Top ${rank}%` : null);
-  const tiles = [
-    { label: 'Kills', value: number(stats.kills), note: rankNote(ranks.kills) },
-    { label: 'Deaths', value: number(stats.deaths) },
-    { label: 'K/D', value: stats.kd.toFixed(2), note: rankNote(ranks.kd) },
-    { label: 'Downs', value: number(stats.wounds) },
-    { label: 'Revives', value: number(stats.revives), note: rankNote(ranks.revives) },
-    { label: 'Revived', value: number(stats.revived) },
-    { label: 'Teamkills', value: number(stats.teamkills) },
-    {
-      label: 'Kills per match',
-      value: stats.matches ? (stats.kills / stats.matches).toFixed(1) : '0.0'
-    }
-  ];
-  const columns = 4;
-  const gap = 16;
-  const tileWidth = (WIDTH - 2 * PADDING - (columns - 1) * gap) / columns;
-  const tileHeight = 128;
-  tiles.forEach((tile, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    drawTile(
-      context,
-      PADDING + column * (tileWidth + gap),
-      164 + row * (tileHeight + gap),
-      tileWidth,
-      tileHeight,
-      tile
-    );
+  drawStatGrid(context, PADDING, 176, leftWidth, 214, stats);
+  drawWeapons(context, PADDING, 404, leftWidth, 120, stats.topWeapons);
+  drawRadar(context, PADDING + leftWidth + 16, 36, WIDTH - 2 * PADDING - leftWidth - 16, 488, {
+    ranks,
+    rankedPlayers,
+    unrankedNote
   });
 
-  const weapon = stats.topWeapon
-    ? `${weaponLabel(stats.topWeapon.weapon)} · ${number(stats.topWeapon.wounds)} downs`
-    : 'none yet';
-  context.fillStyle = COLORS.inkSecondary;
-  context.font = '20px CardSans';
-  context.fillText('Favorite weapon', PADDING, 494);
-  context.fillStyle = COLORS.ink;
-  fitText(context, weapon, WIDTH - 2 * PADDING - 180, 22);
-  context.fillText(weapon, PADDING + 180, 494);
-
   context.fillStyle = COLORS.muted;
-  context.font = '15px CardSans';
+  context.font = font('500', 16);
   context.fillText(
-    'Downs = enemies knocked down. Kills = deaths caused. Teamkills and suicides not counted.',
+    'Downs: enemies knocked down. Kills: deaths caused. Teamkills and suicides not counted.',
     PADDING,
-    532
+    548
   );
 
   return canvas.toBuffer('image/png');

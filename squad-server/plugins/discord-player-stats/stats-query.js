@@ -17,8 +17,11 @@ function identifiers(database) {
   return { table, matchColumn: quote('match') };
 }
 
+const TOP_WEAPONS = 3;
+
 /**
- * Counts for one player in a single statement, so the shared DBLog connection is held once.
+ * Counts for one player in one statement, plus a short one for the top weapons, so the shared DBLog
+ * connection is held only briefly.
  * Stat names follow MySquadStats: wounds are downs, kills are deaths the player caused.
  * Teamkills and self-kills are not counted as wounds or kills.
  */
@@ -39,11 +42,14 @@ export async function fetchPlayerStats(database, steamID) {
         UNION SELECT ${matchColumn} FROM ${table.wounds} WHERE attacker = :steamID
         UNION SELECT ${matchColumn} FROM ${table.revives} WHERE reviver = :steamID
       ) AS played WHERE matchID IS NOT NULL) AS matches,
-      (SELECT weapon FROM ${table.wounds} WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}
-        GROUP BY weapon ORDER BY COUNT(*) DESC LIMIT 1) AS topWeapon,
-      (SELECT COUNT(*) FROM ${table.wounds} WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}
-        GROUP BY weapon ORDER BY COUNT(*) DESC LIMIT 1) AS topWeaponWounds`,
+      (SELECT COUNT(DISTINCT ${matchColumn}) FROM ${table.deaths} WHERE victim = :steamID) AS deathMatches`,
     { replacements: { steamID, no: false, yes: true }, type: QueryTypes.SELECT }
+  );
+  const topWeapons = await database.query(
+    `SELECT weapon, COUNT(*) AS wounds FROM ${table.wounds}
+       WHERE attacker = :steamID AND teamkill = :no AND ${notSelf} AND weapon IS NOT NULL
+       GROUP BY weapon ORDER BY COUNT(*) DESC LIMIT :limit`,
+    { replacements: { steamID, no: false, limit: TOP_WEAPONS }, type: QueryTypes.SELECT }
   );
 
   const count = (value) => Number(value) || 0;
@@ -57,7 +63,8 @@ export async function fetchPlayerStats(database, steamID) {
     revived: count(row.revived),
     teamkills: count(row.teamkills),
     matches: count(row.matches),
-    topWeapon: row.topWeapon ? { weapon: row.topWeapon, wounds: count(row.topWeaponWounds) } : null
+    deathMatches: count(row.deathMatches),
+    topWeapons: topWeapons.map(({ weapon, wounds }) => ({ weapon, wounds: count(wounds) }))
   };
   stats.kd = killDeathRatio(stats);
   return stats;
@@ -68,18 +75,54 @@ export function killDeathRatio({ kills, deaths }) {
 }
 
 /**
+ * The measures a player is ranked on, in the card's radar order (clockwise from the top): totals mixed
+ * with rates, so the profile is not only playtime.
+ * Rates divide by the matches the player died in, the one match count the leaderboard can get from a
+ * single indexed GROUP BY.
+ */
+export const RANKED_MEASURES = [
+  'kills',
+  'wounds',
+  'woundsPerMatch',
+  'kd',
+  'revivesPerMatch',
+  'revives'
+];
+
+function rankedValues({ kills, deaths, wounds, revives, deathMatches }) {
+  const perMatch = (total) => (deathMatches > 0 ? total / deathMatches : 0);
+  return {
+    kills,
+    wounds,
+    woundsPerMatch: perMatch(wounds),
+    kd: killDeathRatio({ kills, deaths }),
+    revivesPerMatch: perMatch(revives),
+    revives
+  };
+}
+
+/**
  * Per-player totals for ranking. Only players with at least `minimumDeaths` deaths are ranked,
  * so one-round visitors do not fill the bottom of every ranking.
  */
 export async function fetchLeaderboard(database, minimumDeaths) {
-  const { table } = identifiers(database);
+  const { table, matchColumn } = identifiers(database);
   const rows = await database.query(
-    `SELECT victim AS steamID, COUNT(*) AS deaths FROM ${table.deaths}
-       WHERE victim IS NOT NULL GROUP BY victim HAVING COUNT(*) >= :minimumDeaths`,
+    `SELECT victim AS steamID, COUNT(*) AS deaths, COUNT(DISTINCT ${matchColumn}) AS deathMatches
+       FROM ${table.deaths} WHERE victim IS NOT NULL GROUP BY victim HAVING COUNT(*) >= :minimumDeaths`,
     { replacements: { minimumDeaths }, type: QueryTypes.SELECT }
   );
   const players = new Map(
-    rows.map((row) => [row.steamID, { kills: 0, deaths: Number(row.deaths), revives: 0 }])
+    rows.map((row) => [
+      row.steamID,
+      {
+        kills: 0,
+        deaths: Number(row.deaths),
+        wounds: 0,
+        revives: 0,
+        deathMatches: Number(row.deathMatches)
+      }
+    ])
   );
 
   const addCounts = async (sql, field) => {
@@ -92,24 +135,24 @@ export async function fetchLeaderboard(database, minimumDeaths) {
       if (player) player[field] = Number(total);
     }
   };
-  await addCounts(
-    `SELECT attacker AS steamID, COUNT(*) AS total FROM ${table.deaths}
+  // Kills and downs of enemies: teamkills and self-kills are not counted.
+  const enemyHits = (eventTable) =>
+    `SELECT attacker AS steamID, COUNT(*) AS total FROM ${eventTable}
        WHERE attacker IS NOT NULL AND teamkill = :no AND (victim IS NULL OR victim <> attacker)
-       GROUP BY attacker`,
-    'kills'
-  );
+       GROUP BY attacker`;
+  await addCounts(enemyHits(table.deaths), 'kills');
+  await addCounts(enemyHits(table.wounds), 'wounds');
   await addCounts(
     `SELECT reviver AS steamID, COUNT(*) AS total FROM ${table.revives}
        WHERE reviver IS NOT NULL GROUP BY reviver`,
     'revives'
   );
 
-  const sorted = (valueOf) => [...players.values()].map(valueOf).sort((a, b) => a - b);
+  const values = [...players.values()].map(rankedValues);
+  const sorted = (measure) => values.map((value) => value[measure]).sort((a, b) => a - b);
   return {
     size: players.size,
-    kills: sorted((player) => player.kills),
-    kd: sorted(killDeathRatio),
-    revives: sorted((player) => player.revives)
+    ...Object.fromEntries(RANKED_MEASURES.map((measure) => [measure, sorted(measure)]))
   };
 }
 
@@ -131,16 +174,15 @@ export function topPercent(sortedValues, value) {
 }
 
 /**
- * "Top X%" values for the card. Players below the ranking's death minimum get none, since they are
+ * "Top X%" for each ranked measure. Players below the ranking's death minimum get none, since they are
  * not in the ranking and a short visit would otherwise rank near the top.
  */
 export function rankPlayer(leaderboard, stats, minimumDeaths) {
   if (!leaderboard || stats.deaths < minimumDeaths) return {};
-  return {
-    kills: topPercent(leaderboard.kills, stats.kills),
-    kd: topPercent(leaderboard.kd, stats.kd),
-    revives: topPercent(leaderboard.revives, stats.revives)
-  };
+  const values = rankedValues(stats);
+  return Object.fromEntries(
+    RANKED_MEASURES.map((measure) => [measure, topPercent(leaderboard[measure], values[measure])])
+  );
 }
 
 /** Turns a blueprint name like "RS_BP_AK74M_1P78" into "AK74M 1P78". */
