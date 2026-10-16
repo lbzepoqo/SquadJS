@@ -102,6 +102,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.leaderboard = null;
     this.statsSince = null;
     this.leaderboardTimeout = null;
+    this.leaderboardBuild = null;
     this.mounted = false;
     this.onInteraction = this.onInteraction.bind(this);
     this.refreshLeaderboard = this.refreshLeaderboard.bind(this);
@@ -150,6 +151,26 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
   }
 
   async refreshLeaderboard() {
+    await this.rebuildLeaderboard();
+
+    // setTimeout runs delays above 2^31 - 1 ms at once, so the interval is capped.
+    if (this.mounted)
+      this.leaderboardTimeout = setTimeout(
+        this.refreshLeaderboard,
+        Math.min(2147483647, this.options.leaderboardRefreshInterval)
+      );
+  }
+
+  // Shared by the timer and by a command that arrives before the first build, so two builds never run at once.
+  rebuildLeaderboard() {
+    if (!this.leaderboardBuild)
+      this.leaderboardBuild = this.buildLeaderboard().finally(() => {
+        this.leaderboardBuild = null;
+      });
+    return this.leaderboardBuild;
+  }
+
+  async buildLeaderboard() {
     try {
       const started = Date.now();
       this.leaderboard = await fetchLeaderboard(
@@ -164,13 +185,6 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     } catch (error) {
       this.verbose(1, `Could not rebuild the rankings: ${error.message}`);
     }
-
-    // setTimeout runs delays above 2^31 - 1 ms at once, so the interval is capped.
-    if (this.mounted)
-      this.leaderboardTimeout = setTimeout(
-        this.refreshLeaderboard,
-        Math.min(2147483647, this.options.leaderboardRefreshInterval)
-      );
   }
 
   async onInteraction(interaction) {
@@ -197,6 +211,8 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         return;
       }
 
+      // Before the first scheduled build (shortly after startup), build the rankings now.
+      if (!this.leaderboard) await this.rebuildLeaderboard();
       const stats = await fetchPlayerStats(this.options.database, link.steamID);
       const card = renderCard(stats, {
         title: this.options.cardTitle,
