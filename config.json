@@ -67,7 +67,11 @@
       "useMySquadStats": true,
       "linkUrl": "https://mysquadstats.com/link",
       "leaderboardMinimumDeaths": 20,
-      "leaderboardRefreshInterval": 21600000
+      "leaderboardRefreshInterval": 21600000,
+      "backgroundChannelID": "",
+      "backgroundTagID": "",
+      "backgroundMaxFileSize": 10485760,
+      "backgroundRefreshInterval": 3600000
     },
     {
       "plugin": "DiscordPlaceholder",

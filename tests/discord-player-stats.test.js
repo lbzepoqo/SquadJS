@@ -8,6 +8,7 @@ import {
   rankPlayer,
   topPercent
 } from '../squad-server/plugins/discord-player-stats/stats-query.js';
+import { backgroundAttachment } from '../squad-server/plugins/discord-player-stats/backgrounds.js';
 
 const PLAYER = '76561190000000001';
 const ENEMY = '76561190000000002';
@@ -129,5 +130,27 @@ describe('DiscordPlayerStats queries', () => {
       revivesPerMatch: 100,
       revives: 100
     });
+  });
+});
+
+describe('DiscordPlayerStats backgrounds', () => {
+  it('takes the first decodable image within the size limit and says why others were skipped', () => {
+    const attachment = (name, contentType, size) => ({ name, contentType, size });
+    const message = {
+      attachments: new Map([
+        ['1', attachment('notes.txt', 'text/plain', 10)],
+        ['2', attachment('shot.webp', 'image/webp', 10)],
+        ['3', attachment('huge.png', 'image/png', 50)],
+        ['4', attachment('tank.jpg', 'image/jpeg', 20)]
+      ])
+    };
+    const skipped = [];
+
+    assert.strictEqual(backgroundAttachment(message, 30, skipped).name, 'tank.jpg');
+    assert.deepStrictEqual(skipped, [
+      'shot.webp is image/webp, use PNG or JPEG',
+      'huge.png is larger than 0 MB'
+    ]);
+    assert.strictEqual(backgroundAttachment({ attachments: new Map() }, 30), null);
   });
 });

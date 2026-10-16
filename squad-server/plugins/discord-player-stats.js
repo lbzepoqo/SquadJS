@@ -17,10 +17,15 @@ import {
 // Discord's error code when the bot was invited without the applications.commands scope.
 const MISSING_ACCESS = 50001;
 const FIRST_LEADERBOARD_DELAY_MS = 60 * 1000;
-// Bounds for leaderboardRefreshInterval: each rebuild scans the event tables, and setTimeout runs delays
+// Bounds for the refresh intervals: each rankings rebuild scans the event tables, and timers run delays
 // above 2^31 - 1 ms at once.
 const MINIMUM_REFRESH_MS = 10 * 60 * 1000;
 const MAXIMUM_REFRESH_MS = 2147483647;
+const BACKGROUND_EVENTS = ['threadCreate', 'threadUpdate', 'threadDelete'];
+
+function boundedInterval(milliseconds) {
+  return Math.min(MAXIMUM_REFRESH_MS, Math.max(MINIMUM_REFRESH_MS, Number(milliseconds) || 0));
+}
 
 export default class DiscordPlayerStats extends DiscordBasePlugin {
   static get description() {
@@ -94,6 +99,34 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         required: false,
         description: 'Milliseconds between two rebuilds of the rankings, at least 10 minutes.',
         default: 6 * 60 * 60 * 1000
+      },
+      backgroundChannelID: {
+        required: false,
+        description:
+          'ID of a forum or media channel whose posts give the card a random background photo. Leave empty ' +
+          'for the plain background.',
+        default: '',
+        example: '667741905228136459'
+      },
+      backgroundTagID: {
+        required: false,
+        description:
+          'ID of the tag that approves a post in the background channel. Only tagged posts are used, so make ' +
+          'the tag moderated: then only members who can manage threads can set it.',
+        default: ''
+      },
+      backgroundMaxFileSize: {
+        required: false,
+        description:
+          'Largest photo in bytes that is used as a background. PNG, JPEG and GIF are supported.',
+        default: 10 * 1024 * 1024
+      },
+      backgroundRefreshInterval: {
+        required: false,
+        description:
+          'Milliseconds between two reads of the background channel, at least 10 minutes. New, ' +
+          'changed and deleted posts are also picked up within seconds when the bot sees the change.',
+        default: 60 * 60 * 1000
       }
     };
   }
@@ -113,6 +146,8 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.leaderboardBuild = null;
     this.leaderboardAttempted = false;
     this.renderCard = null;
+    this.backgrounds = null;
+    this.backgroundInterval = null;
     this.mounted = false;
     this.onInteraction = this.onInteraction.bind(this);
     this.refreshLeaderboard = this.refreshLeaderboard.bind(this);
@@ -128,12 +163,41 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.options.discordClient.on('interactionCreate', this.onInteraction);
     await this.registerCommand();
     this.leaderboardTimeout = setTimeout(this.refreshLeaderboard, FIRST_LEADERBOARD_DELAY_MS);
+    if (this.options.backgroundChannelID) await this.mountBackgrounds();
+  }
+
+  async mountBackgrounds() {
+    if (!this.options.backgroundTagID) {
+      this.verbose(1, 'Backgrounds are off: backgroundChannelID is set without a backgroundTagID.');
+      return;
+    }
+    const { default: BackgroundLibrary } = await import('./discord-player-stats/backgrounds.js');
+    this.backgrounds = new BackgroundLibrary({
+      client: this.options.discordClient,
+      channelID: this.options.backgroundChannelID,
+      tagID: this.options.backgroundTagID,
+      maxBytes: this.options.backgroundMaxFileSize,
+      log: (message) => this.verbose(1, message)
+    });
+    for (const event of BACKGROUND_EVENTS)
+      this.options.discordClient.on(event, this.backgrounds.onThreadEvent);
+    this.backgrounds.refresh();
+    this.backgroundInterval = setInterval(
+      () => this.backgrounds.refresh(),
+      boundedInterval(this.options.backgroundRefreshInterval)
+    );
   }
 
   async unmount() {
     this.mounted = false;
     this.options.discordClient.removeListener('interactionCreate', this.onInteraction);
     clearTimeout(this.leaderboardTimeout);
+    if (this.backgrounds) {
+      for (const event of BACKGROUND_EVENTS)
+        this.options.discordClient.removeListener(event, this.backgrounds.onThreadEvent);
+      this.backgrounds.stop();
+      clearInterval(this.backgroundInterval);
+    }
   }
 
   async registerCommand() {
@@ -167,11 +231,11 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     await this.rebuildLeaderboard();
 
     clearTimeout(this.leaderboardTimeout);
-    const interval = Math.min(
-      MAXIMUM_REFRESH_MS,
-      Math.max(MINIMUM_REFRESH_MS, Number(this.options.leaderboardRefreshInterval) || 0)
-    );
-    if (this.mounted) this.leaderboardTimeout = setTimeout(this.refreshLeaderboard, interval);
+    if (this.mounted)
+      this.leaderboardTimeout = setTimeout(
+        this.refreshLeaderboard,
+        boundedInterval(this.options.leaderboardRefreshInterval)
+      );
   }
 
   // Shared by the timer and by a command that arrives before the first build, so two builds never run at once.
@@ -250,12 +314,17 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       if (!this.leaderboardAttempted) await this.refreshLeaderboard();
       else if (this.leaderboardBuild) await this.leaderboardBuild;
       const stats = await fetchPlayerStats(this.options.database, link.steamID);
+      const background = await this.backgrounds?.pick().catch((error) => {
+        this.verbose(1, `Could not load a background photo: ${error.message}`);
+        return null;
+      });
       const card = this.renderCard(stats, {
         title: this.options.cardTitle,
         since: this.statsSince ? formatDate(this.statsSince) : 'the first recorded match',
         ranks: rankPlayer(this.leaderboard, stats, this.options.leaderboardMinimumDeaths),
         rankedPlayers: this.leaderboard?.size,
-        unrankedNote: this.unrankedNote(stats)
+        unrankedNote: this.unrankedNote(stats),
+        background
       });
       await interaction.editReply({
         files: [new AttachmentBuilder(card, { name: 'stats.png' })]

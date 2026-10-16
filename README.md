@@ -308,7 +308,28 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <h6>Description</h6>
            <p>Milliseconds between two rebuilds of the rankings, at least 10 minutes.</p>
            <h6>Default</h6>
-           <pre><code>21600000</code></pre></li></ul>
+           <pre><code>21600000</code></pre></li>
+<li><h4>backgroundChannelID</h4>
+           <h6>Description</h6>
+           <p>ID of a forum or media channel whose posts give the card a random background photo. Leave empty for the plain background.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>backgroundTagID</h4>
+           <h6>Description</h6>
+           <p>ID of the tag that approves a post in the background channel. Only tagged posts are used, so make the tag moderated: then only members who can manage threads can set it.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>backgroundMaxFileSize</h4>
+           <h6>Description</h6>
+           <p>Largest photo in bytes that is used as a background. PNG, JPEG and GIF are supported.</p>
+           <h6>Default</h6>
+           <pre><code>10485760</code></pre></li>
+<li><h4>backgroundRefreshInterval</h4>
+           <h6>Description</h6>
+           <p>Milliseconds between two reads of the background channel, at least 10 minutes. New, changed and deleted posts are also picked up within seconds when the bot sees the change.</p>
+           <h6>Default</h6>
+           <pre><code>3600000</code></pre></li></ul>
         </details>
 
 <details>

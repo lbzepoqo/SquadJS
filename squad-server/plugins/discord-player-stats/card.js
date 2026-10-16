@@ -12,13 +12,15 @@ registerFont(path.join(fontFolder, 'Oswald-Bold.ttf'), { family: 'CardDisplay', 
 registerFont(path.join(fontFolder, 'DejaVuSans.ttf'), { family: 'CardSans' });
 registerFont(path.join(fontFolder, 'DejaVuSans-Bold.ttf'), { family: 'CardSans', weight: 'bold' });
 
-const WIDTH = 1000;
-const HEIGHT = 560;
+export const CARD_WIDTH = 1000;
+export const CARD_HEIGHT = 560;
 const PADDING = 36;
 const COLORS = {
   backgroundTop: '#262724',
   backgroundBottom: '#121211',
-  panel: 'rgba(0, 0, 0, 0.38)',
+  photoWash: 'rgba(14, 14, 13, 0.55)',
+  photoWashEdge: 'rgba(14, 14, 13, 0.8)',
+  panel: 'rgba(0, 0, 0, 0.45)',
   panelBorder: 'rgba(255, 255, 255, 0.09)',
   grid: 'rgba(255, 255, 255, 0.16)',
   ink: '#f0efec',
@@ -69,22 +71,35 @@ function drawPanel(context, x, y, width, height) {
   context.stroke();
 }
 
-function drawBackground(context) {
-  const gradient = context.createLinearGradient(0, 0, 0, HEIGHT);
-  gradient.addColorStop(0, COLORS.backgroundTop);
-  gradient.addColorStop(1, COLORS.backgroundBottom);
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, WIDTH, HEIGHT);
+function drawBackground(context, photo) {
+  if (photo) {
+    // The photo is already cropped to the card size. A dark wash keeps the text readable on bright photos,
+    // darkest at the top and bottom where text sits outside the panels.
+    context.drawImage(photo, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    const wash = context.createLinearGradient(0, 0, 0, CARD_HEIGHT);
+    wash.addColorStop(0, COLORS.photoWashEdge);
+    wash.addColorStop(0.32, COLORS.photoWash);
+    wash.addColorStop(0.88, COLORS.photoWash);
+    wash.addColorStop(1, COLORS.photoWashEdge);
+    context.fillStyle = wash;
+    context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  } else {
+    const gradient = context.createLinearGradient(0, 0, 0, CARD_HEIGHT);
+    gradient.addColorStop(0, COLORS.backgroundTop);
+    gradient.addColorStop(1, COLORS.backgroundBottom);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  }
 
   // A faint accent glow behind the radar.
   const glow = context.createRadialGradient(778, 300, 0, 778, 300, 420);
   glow.addColorStop(0, 'rgba(217, 89, 38, 0.16)');
   glow.addColorStop(1, 'rgba(217, 89, 38, 0)');
   context.fillStyle = glow;
-  context.fillRect(0, 0, WIDTH, HEIGHT);
+  context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   context.fillStyle = COLORS.accent;
-  context.fillRect(0, 0, 8, HEIGHT);
+  context.fillRect(0, 0, 8, CARD_HEIGHT);
 }
 
 function drawStatGrid(context, x, y, width, height, stats) {
@@ -263,12 +278,16 @@ function drawRadar(context, x, y, width, height, { ranks, rankedPlayers, unranke
 /**
  * Renders the stats card as a PNG buffer.
  * `ranks` holds the "Top X%" value of each ranked measure, empty when the player has no ranking;
- * `unrankedNote` then says why.
+ * `unrankedNote` then says why. `background` is an optional `{ image, credit }` photo already cropped to
+ * the card size.
  */
-export function renderCard(stats, { title, since, ranks = {}, rankedPlayers = 0, unrankedNote }) {
-  const canvas = createCanvas(WIDTH, HEIGHT);
+export function renderCard(
+  stats,
+  { title, since, ranks = {}, rankedPlayers = 0, unrankedNote, background }
+) {
+  const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const context = canvas.getContext('2d');
-  drawBackground(context);
+  drawBackground(context, background?.image);
 
   const leftWidth = 540;
   context.fillStyle = COLORS.muted;
@@ -285,7 +304,7 @@ export function renderCard(stats, { title, since, ranks = {}, rankedPlayers = 0,
 
   drawStatGrid(context, PADDING, 176, leftWidth, 214, stats);
   drawWeapons(context, PADDING, 404, leftWidth, 120, stats.topWeapons);
-  drawRadar(context, PADDING + leftWidth + 16, 36, WIDTH - 2 * PADDING - leftWidth - 16, 488, {
+  drawRadar(context, PADDING + leftWidth + 16, 36, CARD_WIDTH - 2 * PADDING - leftWidth - 16, 488, {
     ranks,
     rankedPlayers,
     unrankedNote
@@ -298,6 +317,23 @@ export function renderCard(stats, { title, since, ranks = {}, rankedPlayers = 0,
     PADDING,
     548
   );
+  if (background?.credit) {
+    const creditLeft = PADDING + leftWidth + 16;
+    context.textAlign = 'right';
+    context.fillText(
+      fitText(
+        context,
+        `Photo: ${background.credit}`,
+        CARD_WIDTH - PADDING - creditLeft,
+        16,
+        16,
+        '500'
+      ),
+      CARD_WIDTH - PADDING,
+      548
+    );
+    context.textAlign = 'left';
+  }
 
   return canvas.toBuffer('image/png');
 }
