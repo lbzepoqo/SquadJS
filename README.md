@@ -306,7 +306,7 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <pre><code>20</code></pre></li>
 <li><h4>leaderboardRefreshInterval</h4>
            <h6>Description</h6>
-           <p>Milliseconds between two rebuilds of the rankings.</p>
+           <p>Milliseconds between two rebuilds of the rankings, at least 10 minutes.</p>
            <h6>Default</h6>
            <pre><code>21600000</code></pre></li></ul>
         </details>

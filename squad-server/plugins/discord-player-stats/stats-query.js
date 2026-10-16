@@ -7,14 +7,16 @@ const TABLES = {
   players: 'DBLog_Players',
   wounds: 'DBLog_Wounds',
   deaths: 'DBLog_Deaths',
-  revives: 'DBLog_Revives'
+  revives: 'DBLog_Revives',
+  matches: 'DBLog_Matches'
 };
 
-// Quoted for the connector's dialect; `match` is a reserved word in MySQL.
+// Quoted for the connector's dialect: `match` is a reserved word in MySQL, and Postgres folds unquoted
+// camelCase names such as steamID to lower case.
 function identifiers(database) {
   const quote = (name) => database.getQueryInterface().quoteIdentifier(name);
   const table = Object.fromEntries(Object.entries(TABLES).map(([key, name]) => [key, quote(name)]));
-  return { table, matchColumn: quote('match') };
+  return { table, quote, matchColumn: quote('match') };
 }
 
 const TOP_WEAPONS = 3;
@@ -23,33 +25,46 @@ const TOP_WEAPONS = 3;
  * Counts for one player in one statement, plus a short one for the top weapons, so the shared DBLog
  * connection is held only briefly.
  * Stat names follow MySquadStats: wounds are downs, kills are deaths the player caused.
- * Teamkills and self-kills are not counted as wounds or kills.
+ * Teamkills and self-kills are not counted as wounds or kills. Neither are events whose victim was not
+ * resolved: DBLog stores those without a teamkill flag, so a teamkill cannot be ruled out (about 0.3% of
+ * deaths on our server in Oct 2026).
  */
 export async function fetchPlayerStats(database, steamID) {
-  const { table, matchColumn } = identifiers(database);
+  const { table, quote, matchColumn } = identifiers(database);
   const notSelf = '(victim IS NULL OR victim <> :steamID)';
   const [row] = await database.query(
     `SELECT
-      (SELECT lastName FROM ${table.players} WHERE steamID = :steamID) AS name,
-      (SELECT COUNT(*) FROM ${table.wounds} WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}) AS wounds,
-      (SELECT COUNT(*) FROM ${table.deaths} WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}) AS kills,
+      (SELECT ${quote('lastName')} FROM ${table.players} WHERE ${quote(
+      'steamID'
+    )} = :steamID) AS name,
+      (SELECT COUNT(*) FROM ${
+        table.wounds
+      } WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}) AS wounds,
+      (SELECT COUNT(*) FROM ${
+        table.deaths
+      } WHERE attacker = :steamID AND teamkill = :no AND ${notSelf}) AS kills,
       (SELECT COUNT(*) FROM ${table.deaths} WHERE victim = :steamID) AS deaths,
       (SELECT COUNT(*) FROM ${table.revives} WHERE reviver = :steamID) AS revives,
       (SELECT COUNT(*) FROM ${table.revives} WHERE victim = :steamID) AS revived,
-      (SELECT COUNT(*) FROM ${table.wounds} WHERE attacker = :steamID AND teamkill = :yes AND ${notSelf}) AS teamkills,
+      (SELECT COUNT(*) FROM ${
+        table.wounds
+      } WHERE attacker = :steamID AND teamkill = :yes AND ${notSelf}) AS teamkills,
       (SELECT COUNT(*) FROM (
         SELECT ${matchColumn} AS matchID FROM ${table.deaths} WHERE victim = :steamID
         UNION SELECT ${matchColumn} FROM ${table.wounds} WHERE attacker = :steamID
         UNION SELECT ${matchColumn} FROM ${table.revives} WHERE reviver = :steamID
       ) AS played WHERE matchID IS NOT NULL) AS matches,
-      (SELECT COUNT(DISTINCT ${matchColumn}) FROM ${table.deaths} WHERE victim = :steamID) AS deathMatches`,
+      (SELECT COUNT(DISTINCT ${matchColumn}) FROM ${
+      table.deaths
+    } WHERE victim = :steamID) AS ${quote('deathMatches')}`,
     { replacements: { steamID, no: false, yes: true }, type: QueryTypes.SELECT }
   );
-  const topWeapons = await database.query(
+  // All weapons, cut in JavaScript: the row limit syntax differs between dialects (LIMIT vs TOP).
+  const weapons = await database.query(
     `SELECT weapon, COUNT(*) AS wounds FROM ${table.wounds}
        WHERE attacker = :steamID AND teamkill = :no AND ${notSelf} AND weapon IS NOT NULL
-       GROUP BY weapon ORDER BY COUNT(*) DESC LIMIT :limit`,
-    { replacements: { steamID, no: false, limit: TOP_WEAPONS }, type: QueryTypes.SELECT }
+       GROUP BY weapon ORDER BY COUNT(*) DESC`,
+    { replacements: { steamID, no: false }, type: QueryTypes.SELECT }
   );
 
   const count = (value) => Number(value) || 0;
@@ -64,7 +79,9 @@ export async function fetchPlayerStats(database, steamID) {
     teamkills: count(row.teamkills),
     matches: count(row.matches),
     deathMatches: count(row.deathMatches),
-    topWeapons: topWeapons.map(({ weapon, wounds }) => ({ weapon, wounds: count(wounds) }))
+    topWeapons: weapons
+      .slice(0, TOP_WEAPONS)
+      .map(({ weapon, wounds }) => ({ weapon, wounds: count(wounds) }))
   };
   stats.kd = killDeathRatio(stats);
   return stats;
@@ -106,10 +123,14 @@ function rankedValues({ kills, deaths, wounds, revives, deathMatches }) {
  * so one-round visitors do not fill the bottom of every ranking.
  */
 export async function fetchLeaderboard(database, minimumDeaths) {
-  const { table, matchColumn } = identifiers(database);
+  const { table, quote, matchColumn } = identifiers(database);
+  const steamIDAlias = quote('steamID');
   const rows = await database.query(
-    `SELECT victim AS steamID, COUNT(*) AS deaths, COUNT(DISTINCT ${matchColumn}) AS deathMatches
-       FROM ${table.deaths} WHERE victim IS NOT NULL GROUP BY victim HAVING COUNT(*) >= :minimumDeaths`,
+    `SELECT victim AS ${steamIDAlias}, COUNT(*) AS deaths,
+       COUNT(DISTINCT ${matchColumn}) AS ${quote('deathMatches')}
+       FROM ${
+         table.deaths
+       } WHERE victim IS NOT NULL GROUP BY victim HAVING COUNT(*) >= :minimumDeaths`,
     { replacements: { minimumDeaths }, type: QueryTypes.SELECT }
   );
   const players = new Map(
@@ -137,19 +158,20 @@ export async function fetchLeaderboard(database, minimumDeaths) {
   };
   // Kills and downs of enemies: teamkills and self-kills are not counted.
   const enemyHits = (eventTable) =>
-    `SELECT attacker AS steamID, COUNT(*) AS total FROM ${eventTable}
+    `SELECT attacker AS ${steamIDAlias}, COUNT(*) AS total FROM ${eventTable}
        WHERE attacker IS NOT NULL AND teamkill = :no AND (victim IS NULL OR victim <> attacker)
        GROUP BY attacker`;
   await addCounts(enemyHits(table.deaths), 'kills');
   await addCounts(enemyHits(table.wounds), 'wounds');
   await addCounts(
-    `SELECT reviver AS steamID, COUNT(*) AS total FROM ${table.revives}
+    `SELECT reviver AS ${steamIDAlias}, COUNT(*) AS total FROM ${table.revives}
        WHERE reviver IS NOT NULL GROUP BY reviver`,
     'revives'
   );
 
   const values = [...players.values()].map(rankedValues);
-  const sorted = (measure) => values.map((value) => value[measure]).sort((a, b) => a - b);
+  const sorted = (measure) =>
+    values.map((value) => value[measure]).sort((lower, higher) => lower - higher);
   return {
     size: players.size,
     ...Object.fromEntries(RANKED_MEASURES.map((measure) => [measure, sorted(measure)]))
@@ -198,9 +220,10 @@ export function weaponLabel(blueprint) {
 
 /** Start time of the first match DBLog recorded, or null when there is none. */
 export async function fetchFirstMatchTime(database) {
-  const quote = (name) => database.getQueryInterface().quoteIdentifier(name);
+  const { table, quote } = identifiers(database);
+  const startTime = quote('startTime');
   const [row] = await database.query(
-    `SELECT startTime FROM ${quote('DBLog_Matches')} ORDER BY id LIMIT 1`,
+    `SELECT MIN(${startTime}) AS ${startTime} FROM ${table.matches}`,
     { type: QueryTypes.SELECT }
   );
   return row?.startTime ? new Date(row.startTime) : null;

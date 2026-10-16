@@ -49,9 +49,13 @@ function fitText(context, text, maxWidth, size, minimumSize, weight = 'bold') {
     fontSize -= 2;
     context.font = font(weight, fontSize);
   }
+  // Shortened by code points, so an emoji in a clan tag is never cut in half.
+  const characters = Array.from(text);
   let fitted = text;
-  while (context.measureText(fitted).width > maxWidth && fitted.length > 1)
-    fitted = `${fitted.slice(0, -2).trimEnd()}…`;
+  while (context.measureText(fitted).width > maxWidth && characters.length > 1) {
+    characters.splice(-2, 2);
+    fitted = `${characters.join('').trimEnd()}…`;
+  }
   return fitted;
 }
 

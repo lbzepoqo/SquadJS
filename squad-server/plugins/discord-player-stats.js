@@ -7,7 +7,6 @@ import {
 
 import DiscordBasePlugin from './discord-base-plugin.js';
 import LinkResolver from './discord-player-stats/link-resolver.js';
-import { renderCard } from './discord-player-stats/card.js';
 import {
   fetchFirstMatchTime,
   fetchLeaderboard,
@@ -18,6 +17,10 @@ import {
 // Discord's error code when the bot was invited without the applications.commands scope.
 const MISSING_ACCESS = 50001;
 const FIRST_LEADERBOARD_DELAY_MS = 60 * 1000;
+// Bounds for leaderboardRefreshInterval: each rebuild scans the event tables, and setTimeout runs delays
+// above 2^31 - 1 ms at once.
+const MINIMUM_REFRESH_MS = 10 * 60 * 1000;
+const MAXIMUM_REFRESH_MS = 2147483647;
 
 export default class DiscordPlayerStats extends DiscordBasePlugin {
   static get description() {
@@ -89,7 +92,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       },
       leaderboardRefreshInterval: {
         required: false,
-        description: 'Milliseconds between two rebuilds of the rankings.',
+        description: 'Milliseconds between two rebuilds of the rankings, at least 10 minutes.',
         default: 6 * 60 * 60 * 1000
       }
     };
@@ -108,6 +111,8 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.statsSince = null;
     this.leaderboardTimeout = null;
     this.leaderboardBuild = null;
+    this.leaderboardAttempted = false;
+    this.renderCard = null;
     this.mounted = false;
     this.onInteraction = this.onInteraction.bind(this);
     this.refreshLeaderboard = this.refreshLeaderboard.bind(this);
@@ -117,6 +122,8 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
   async prepareToMount() {}
 
   async mount() {
+    // Loaded here so the native canvas module is only needed when this plugin is enabled.
+    ({ renderCard: this.renderCard } = await import('./discord-player-stats/card.js'));
     this.mounted = true;
     this.options.discordClient.on('interactionCreate', this.onInteraction);
     await this.registerCommand();
@@ -155,15 +162,16 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     }
   }
 
+  // Rebuilds now and schedules the next rebuild one interval later, replacing any pending one.
   async refreshLeaderboard() {
     await this.rebuildLeaderboard();
 
-    // setTimeout runs delays above 2^31 - 1 ms at once, so the interval is capped.
-    if (this.mounted)
-      this.leaderboardTimeout = setTimeout(
-        this.refreshLeaderboard,
-        Math.min(2147483647, this.options.leaderboardRefreshInterval)
-      );
+    clearTimeout(this.leaderboardTimeout);
+    const interval = Math.min(
+      MAXIMUM_REFRESH_MS,
+      Math.max(MINIMUM_REFRESH_MS, Number(this.options.leaderboardRefreshInterval) || 0)
+    );
+    if (this.mounted) this.leaderboardTimeout = setTimeout(this.refreshLeaderboard, interval);
   }
 
   // Shared by the timer and by a command that arrives before the first build, so two builds never run at once.
@@ -176,6 +184,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
   }
 
   async buildLeaderboard() {
+    this.leaderboardAttempted = true;
     try {
       const started = Date.now();
       this.leaderboard = await fetchLeaderboard(
@@ -236,10 +245,12 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         return;
       }
 
-      // Before the first scheduled build (shortly after startup), build the rankings now.
-      if (!this.leaderboard) await this.rebuildLeaderboard();
+      // Before the first scheduled build (shortly after startup), build the rankings now. A failed build
+      // is left to the timer, so commands do not repeat the scans while the database struggles.
+      if (!this.leaderboardAttempted) await this.refreshLeaderboard();
+      else if (this.leaderboardBuild) await this.leaderboardBuild;
       const stats = await fetchPlayerStats(this.options.database, link.steamID);
-      const card = renderCard(stats, {
+      const card = this.renderCard(stats, {
         title: this.options.cardTitle,
         since: this.statsSince ? formatDate(this.statsSince) : 'the first recorded match',
         ranks: rankPlayer(this.leaderboard, stats, this.options.leaderboardMinimumDeaths),
