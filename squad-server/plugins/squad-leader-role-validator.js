@@ -465,7 +465,7 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
 
         for (const player of squadPlayers) {
           await this.server.rcon.warn(
-            player.steamID,
+            player.eosID,
             'Your squad has been disbanded due to not having a proper Squad Leader role.'
           );
         }
@@ -491,7 +491,7 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
       try {
         // Warn the squad leader if available
         if (squadLeader) {
-          await this.server.rcon.warn(squadLeader.steamID, warning);
+          await this.server.rcon.warn(squadLeader.eosID, warning);
         }
 
         // Warn all squad members (excluding the SL who was already warned)
@@ -499,11 +499,11 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
           (player) =>
             player.teamID === squad.teamID &&
             player.squadID === squad.squadID &&
-            (!squadLeader || player.steamID !== squadLeader.steamID)
+            (!squadLeader || player.eosID !== squadLeader.eosID)
         );
 
         for (const member of squadMembers) {
-          await this.server.rcon.warn(member.steamID, warning);
+          await this.server.rcon.warn(member.eosID, warning);
         }
 
         // Update tracking
@@ -534,14 +534,14 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
     const notified = new Set();
 
     for (const admin of adminPlayers) {
-      const steamID = admin?.steamID;
-      if (!steamID || notified.has(steamID)) continue;
+      const eosID = admin?.eosID;
+      if (!eosID || notified.has(eosID)) continue;
 
       try {
-        await this.server.rcon.warn(steamID, notification);
-        notified.add(steamID);
+        await this.server.rcon.warn(eosID, notification);
+        notified.add(eosID);
       } catch (error) {
-        this.verbose(1, `Error notifying admin ${admin?.name || steamID}: ${error.message}`);
+        this.verbose(1, `Error notifying admin ${admin?.name || eosID}: ${error.message}`);
       }
     }
   }
@@ -561,13 +561,13 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
 
       // Thank the squad leader
       const thankMessage = `Thank you for selecting the proper Squad Leader role! Your squad will not be disbanded.`;
-      await this.server.rcon.warn(squadLeader.steamID, thankMessage);
+      await this.server.rcon.warn(squadLeader.eosID, thankMessage);
 
       // Notify other squad members
       const memberMessage = `Your Squad Leader has selected the proper role. Squad will not be disbanded.`;
       for (const member of squadMembers) {
-        if (member.steamID !== squadLeader.steamID) {
-          await this.server.rcon.warn(member.steamID, memberMessage);
+        if (member.eosID !== squadLeader.eosID) {
+          await this.server.rcon.warn(member.eosID, memberMessage);
         }
       }
 
