@@ -4,6 +4,7 @@ import { after, before, describe, it } from 'node:test';
 
 import {
   fetchLeaderboard,
+  fetchPlayerHighlights,
   fetchPlayerStats,
   rankPlayer,
   topPercent
@@ -160,5 +161,116 @@ describe('DiscordPlayerStats backgrounds', () => {
       'panorama.jpg is 16000x8000 pixels, more than 50 megapixels'
     ]);
     assert.strictEqual(backgroundAttachment({ attachments: new Map() }, 30).attachment, null);
+  });
+});
+
+describe('DiscordPlayerStats highlights', () => {
+  const HERO = '76561190000000011';
+  const RIVAL = '76561190000000012';
+  const TARGET = '76561190000000013';
+  const MEDIC = '76561190000000014';
+  const highlightsDatabase = new Sequelize({
+    dialect: 'sqlite',
+    storage: ':memory:',
+    logging: false
+  });
+  const add = (table, rows) =>
+    Promise.all(
+      rows.map((row) =>
+        highlightsDatabase.query(
+          `INSERT INTO ${table} (${Object.keys(row).map((column) => `\`${column}\``)})
+           VALUES (${Object.keys(row).map((column) => `:${column}`)})`,
+          { replacements: row }
+        )
+      )
+    );
+
+  before(async () => {
+    await highlightsDatabase.query(
+      'CREATE TABLE DBLog_Players (steamID VARCHAR(255), lastName VARCHAR(255))'
+    );
+    await highlightsDatabase.query(
+      `CREATE TABLE DBLog_Deaths ${event(', time DATETIME').replace('weapon VARCHAR(255), ', '')}`
+    );
+    await highlightsDatabase.query(`CREATE TABLE DBLog_Revives ${event(', reviver VARCHAR(255)')}`);
+    await highlightsDatabase.query(
+      `CREATE TABLE DBLog_Matches (id INTEGER PRIMARY KEY, layer VARCHAR(255),
+         layerClassname VARCHAR(255), startTime DATETIME)`
+    );
+
+    await add('DBLog_Players', [
+      { steamID: RIVAL, lastName: 'Rival' },
+      { steamID: TARGET, lastName: 'Target' },
+      { steamID: MEDIC, lastName: 'Medic' }
+    ]);
+    await add('DBLog_Matches', [
+      {
+        id: 1,
+        layer: null,
+        layerClassname: 'L_SAT_Tallil_Seed_v1',
+        startTime: '2026-10-01 10:00:00'
+      },
+      {
+        id: 2,
+        layer: 'Mestia AAS v2',
+        layerClassname: 'Mestia_AAS_v2',
+        startTime: '2026-10-02 10:00:00'
+      }
+    ]);
+    const death = (attacker, victim, match, minute, teamkill = 0) => ({
+      attacker,
+      victim,
+      teamkill,
+      match,
+      time: `2026-10-0${match} 10:${String(minute).padStart(2, '0')}:00`
+    });
+    // Match 1: 3 kills, a death, 1 kill. Match 2: 3 kills, a streak of 3 only if it restarts with the match.
+    await add('DBLog_Deaths', [
+      death(HERO, RIVAL, 1, 1),
+      death(HERO, RIVAL, 1, 2),
+      death(HERO, TARGET, 1, 3),
+      death(RIVAL, HERO, 1, 4),
+      death(HERO, RIVAL, 1, 5),
+      death(HERO, TARGET, 2, 1),
+      death(HERO, TARGET, 2, 2),
+      death(HERO, TARGET, 2, 3),
+      death(HERO, MEDIC, 2, 4, 1),
+      death(RIVAL, HERO, 2, 5),
+      death(RIVAL, HERO, 2, 6)
+    ]);
+    // The medic revived the hero 3 times; the hero revived the medic twice, below the minimum.
+    await add('DBLog_Revives', [
+      { victim: HERO, reviver: MEDIC, match: 1 },
+      { victim: HERO, reviver: MEDIC, match: 2 },
+      { victim: HERO, reviver: MEDIC, match: 2 },
+      { victim: MEDIC, reviver: HERO, match: 1 },
+      { victim: MEDIC, reviver: HERO, match: 2 }
+    ]);
+  });
+
+  after(() => highlightsDatabase.close());
+
+  it('finds the people, the best match and the longest streak within one match', async () => {
+    const highlights = await fetchPlayerHighlights(highlightsDatabase, HERO);
+
+    assert.deepStrictEqual(highlights, {
+      nemesis: { steamID: RIVAL, count: 3, name: 'Rival' },
+      favoriteVictim: { steamID: TARGET, count: 4, name: 'Target' },
+      revivedMost: null,
+      revivedByMost: { steamID: MEDIC, count: 3, name: 'Medic' },
+      bestMatch: {
+        matchID: 1,
+        kills: 4,
+        layer: 'SAT Tallil Seed v1',
+        startTime: new Date('2026-10-01 10:00:00')
+      },
+      // Equal streaks in both matches: the latest wins.
+      longestStreak: {
+        matchID: 2,
+        kills: 3,
+        layer: 'Mestia AAS v2',
+        startTime: new Date('2026-10-02 10:00:00')
+      }
+    });
   });
 });

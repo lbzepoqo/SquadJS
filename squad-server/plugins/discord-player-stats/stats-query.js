@@ -87,6 +87,121 @@ export async function fetchPlayerStats(database, steamID) {
   return stats;
 }
 
+// A nemesis, favorite victim or revive partner below this count is mostly chance (at the median regular
+// they are ties at 2), so the card shows none instead.
+export const MINIMUM_PERSON_COUNT = 3;
+
+/**
+ * Highlights for one player, each null when there is none: the enemy who killed them most (nemesis), the
+ * enemy they killed most, the teammate they revived most and the one who revived them most, the match with
+ * the most kills, and the longest kill streak (kills between their own deaths within one match).
+ * Kills are counted as in `fetchPlayerStats`, at the time the victim died: DBLog's woundTime equals the death
+ * time, so an enemy who bleeds out after the player's own death counts in the player's next streak.
+ * Ties go to the latest match.
+ */
+export async function fetchPlayerHighlights(database, steamID) {
+  const { table, quote, matchColumn } = identifiers(database);
+  const select = (sql) =>
+    database.query(sql, {
+      replacements: { steamID, no: false, minimum: MINIMUM_PERSON_COUNT },
+      type: QueryTypes.SELECT
+    });
+  const enemyKill =
+    'teamkill = :no AND attacker IS NOT NULL AND victim IS NOT NULL AND attacker <> victim';
+
+  // The most frequent other player, ties broken by steamID so the answer is stable.
+  const topPerson = async (otherColumn, eventTable, where) => {
+    const [row] = await select(
+      `SELECT ${otherColumn} AS other, COUNT(*) AS total FROM ${eventTable} WHERE ${where}
+         GROUP BY ${otherColumn} HAVING COUNT(*) >= :minimum ORDER BY COUNT(*) DESC, ${otherColumn}`
+    );
+    return row ? { steamID: row.other, count: Number(row.total) } : null;
+  };
+  const nemesis = await topPerson('attacker', table.deaths, `victim = :steamID AND ${enemyKill}`);
+  const favoriteVictim = await topPerson(
+    'victim',
+    table.deaths,
+    `attacker = :steamID AND ${enemyKill}`
+  );
+  const revivedMost = await topPerson(
+    'victim',
+    table.revives,
+    'reviver = :steamID AND victim IS NOT NULL AND victim <> reviver'
+  );
+  const revivedByMost = await topPerson(
+    'reviver',
+    table.revives,
+    'victim = :steamID AND reviver IS NOT NULL AND victim <> reviver'
+  );
+
+  // The player's kills and deaths in order; a death, or the next match, ends a streak.
+  const timeline = await select(
+    `SELECT ${matchColumn} AS ${quote('matchID')}, victim FROM ${table.deaths}
+       WHERE ((attacker = :steamID AND ${enemyKill}) OR victim = :steamID) AND ${matchColumn} IS NOT NULL
+       ORDER BY ${matchColumn}, ${quote('time')}, id`
+  );
+  let bestMatch = null;
+  let longestStreak = null;
+  let matchKills = 0;
+  let streak = 0;
+  let currentMatch = null;
+  for (const event of timeline) {
+    if (event.matchID !== currentMatch) {
+      matchKills = 0;
+      streak = 0;
+      currentMatch = event.matchID;
+    }
+    if (event.victim === steamID) {
+      streak = 0;
+      continue;
+    }
+    matchKills++;
+    streak++;
+    // Matches come in ID order, so >= keeps the latest of equal ones.
+    if (matchKills >= (bestMatch?.kills ?? 0))
+      bestMatch = { matchID: event.matchID, kills: matchKills };
+    if (streak >= (longestStreak?.kills ?? 0))
+      longestStreak = { matchID: event.matchID, kills: streak };
+  }
+
+  const people = [nemesis, favoriteVictim, revivedMost, revivedByMost].filter(Boolean);
+  if (people.length > 0) {
+    const names = await database.query(
+      `SELECT ${quote('steamID')}, ${quote('lastName')} FROM ${table.players}
+         WHERE ${quote('steamID')} IN (:steamIDs)`,
+      {
+        replacements: { steamIDs: [...new Set(people.map((person) => person.steamID))] },
+        type: QueryTypes.SELECT
+      }
+    );
+    const nameOf = new Map(names.map((row) => [row.steamID, row.lastName]));
+    for (const person of people) person.name = nameOf.get(person.steamID) ?? null;
+  }
+
+  const matchRecords = [bestMatch, longestStreak].filter(Boolean);
+  if (matchRecords.length > 0) {
+    const matches = await database.query(
+      `SELECT id, layer, ${quote('layerClassname')}, ${quote('startTime')} FROM ${table.matches}
+         WHERE id IN (:matchIDs)`,
+      {
+        replacements: { matchIDs: [...new Set(matchRecords.map((record) => record.matchID))] },
+        type: QueryTypes.SELECT
+      }
+    );
+    const matchByID = new Map(matches.map((match) => [match.id, match]));
+    for (const record of matchRecords) {
+      const match = matchByID.get(record.matchID);
+      // DBLog leaves the layer name empty for layers its layer list does not know, such as seed and mod
+      // layers; the class name is always set ("L_SAT_Tallil_Seed_v1" reads "SAT Tallil Seed v1").
+      record.layer =
+        match?.layer || match?.layerClassname?.replace(/^L_/, '').replace(/_/g, ' ') || null;
+      record.startTime = match?.startTime ? new Date(match.startTime) : null;
+    }
+  }
+
+  return { nemesis, favoriteVictim, revivedMost, revivedByMost, bestMatch, longestStreak };
+}
+
 export function killDeathRatio({ kills, deaths }) {
   return deaths > 0 ? kills / deaths : kills;
 }
@@ -216,6 +331,16 @@ export function weaponLabel(blueprint) {
     .replace(/_C$/, '')
     .replace(/_/g, ' ')
     .trim();
+}
+
+/** A date like "28 Jun 2026", in UTC. */
+export function formatDate(date) {
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC'
+  });
 }
 
 /** Start time of the first match DBLog recorded, or null when there is none. */

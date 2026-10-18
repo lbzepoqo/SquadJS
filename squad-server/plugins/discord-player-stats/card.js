@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 
-import { RANKED_MEASURES, weaponLabel } from './stats-query.js';
+import { formatDate, RANKED_MEASURES, weaponLabel } from './stats-query.js';
 
 // The fonts are bundled because the server container may have none installed. Characters Oswald
 // lacks fall back to the other registered fonts: DejaVu for symbols in clan tags, Noto for Chinese,
@@ -23,7 +23,7 @@ registerFont(path.join(fontFolder, 'NotoSansThai-Bold.ttf'), {
 registerFont(path.join(fontFolder, 'NotoEmoji.ttf'), { family: 'CardEmoji' });
 
 export const CARD_WIDTH = 1000;
-export const CARD_HEIGHT = 560;
+export const CARD_HEIGHT = 736;
 const PADDING = 36;
 const COLORS = {
   backgroundTop: '#262724',
@@ -172,6 +172,86 @@ function drawWeapons(context, x, y, width, height, weapons) {
   });
 }
 
+const timesText = (count) => `${number(count)} ${count === 1 ? 'time' : 'times'}`;
+const killsText = (count) => `${number(count)} ${count === 1 ? 'kill' : 'kills'}`;
+
+function personLine(context, { name, steamID }, maxWidth) {
+  return fitText(context, name?.trim() || steamID, maxWidth, 24, 18);
+}
+
+// The layer is shortened before the date, so a long mod layer name never hides when the match was.
+function matchLine(context, { layer, startTime }, maxWidth) {
+  const date = startTime ? formatDate(startTime) : null;
+  if (!layer) return fitText(context, date ?? 'Match not recorded', maxWidth, 24, 18);
+  if (!date) return fitText(context, layer, maxWidth, 24, 18);
+  const dateText = `, ${date}`;
+  const fullText = `${layer}${dateText}`;
+  // Shrinks the font first; at the smallest size only the layer is shortened.
+  if (fitText(context, fullText, maxWidth, 24, 18) === fullText) return fullText;
+  const layerWidth = maxWidth - context.measureText(dateText).width;
+  return `${fitText(context, layer, layerWidth, 18, 18)}${dateText}`;
+}
+
+// Two rows of three cells: a label with the count, then the person or the match.
+function drawHighlights(context, x, y, width, height, highlights = {}) {
+  drawPanel(context, x, y, width, height);
+  context.fillStyle = COLORS.muted;
+  context.font = font('500', 18);
+  context.fillText('HIGHLIGHTS', x + 22, y + 32);
+
+  const cells = [
+    [
+      'Nemesis',
+      highlights.nemesis,
+      (record) => `killed you ${timesText(record.count)}`,
+      personLine
+    ],
+    [
+      'Favorite victim',
+      highlights.favoriteVictim,
+      (record) => `killed ${timesText(record.count)}`,
+      personLine
+    ],
+    ['Best match', highlights.bestMatch, (record) => killsText(record.kills), matchLine],
+    ['You revived most', highlights.revivedMost, (record) => timesText(record.count), personLine],
+    ['Revived you most', highlights.revivedByMost, (record) => timesText(record.count), personLine],
+    [
+      'Longest kill streak',
+      highlights.longestStreak,
+      (record) => killsText(record.kills),
+      matchLine
+    ]
+  ];
+  const inset = 22;
+  const cellWidth = (width - 2 * inset) / 3;
+  cells.forEach(([label, record, countText, valueText], index) => {
+    const left = x + inset + (index % 3) * cellWidth;
+    const top = y + 44 + Math.floor(index / 3) * 58;
+    context.fillStyle = COLORS.inkSecondary;
+    context.font = font('500', 18);
+    context.fillText(
+      fitText(
+        context,
+        record ? `${label} · ${countText(record)}` : label,
+        cellWidth - 16,
+        18,
+        16,
+        '500'
+      ),
+      left,
+      top + 18
+    );
+    if (record) {
+      context.fillStyle = COLORS.ink;
+      context.fillText(valueText(context, record, cellWidth - 16), left, top + 46);
+    } else {
+      context.fillStyle = COLORS.muted;
+      context.font = font('500', 22);
+      context.fillText('None yet', left, top + 46);
+    }
+  });
+}
+
 function radarPoint(centerX, centerY, radius, index, share) {
   const angle = -Math.PI / 2 + (index * 2 * Math.PI) / RADAR_AXES.length;
   return [centerX + Math.cos(angle) * radius * share, centerY + Math.sin(angle) * radius * share];
@@ -314,12 +394,12 @@ export async function cropToCard(imageBuffer) {
 /**
  * Renders the stats card as a PNG buffer.
  * `ranks` holds the "Top X%" value of each ranked measure, empty when the player has no ranking;
- * `unrankedNote` then says why. `background` is an optional `{ image, credit }` photo already cropped to
+ * `unrankedNote` then says why. `highlights` is the result of `fetchPlayerHighlights`. `background` is an optional `{ image, credit }` photo already cropped to
  * the card size.
  */
 export function renderCard(
   stats,
-  { title, since, ranks = {}, rankedPlayers = 0, unrankedNote, background }
+  { title, since, ranks = {}, rankedPlayers = 0, unrankedNote, highlights, background }
 ) {
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const context = canvas.getContext('2d');
@@ -345,13 +425,14 @@ export function renderCard(
     rankedPlayers,
     unrankedNote
   });
+  drawHighlights(context, PADDING, 538, CARD_WIDTH - 2 * PADDING, 164, highlights);
 
   context.fillStyle = COLORS.muted;
   context.font = font('500', 16);
   context.fillText(
     'Downs: enemies knocked down. Kills: deaths caused. Teamkills and suicides not counted.',
     PADDING,
-    548
+    CARD_HEIGHT - 12
   );
   if (background?.credit) {
     const creditLeft = PADDING + leftWidth + 16;
@@ -366,7 +447,7 @@ export function renderCard(
         '500'
       ),
       CARD_WIDTH - PADDING,
-      548
+      CARD_HEIGHT - 12
     );
     context.textAlign = 'left';
   }

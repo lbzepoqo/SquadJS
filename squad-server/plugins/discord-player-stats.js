@@ -10,7 +10,9 @@ import LinkResolver from './discord-player-stats/link-resolver.js';
 import {
   fetchFirstMatchTime,
   fetchLeaderboard,
+  fetchPlayerHighlights,
   fetchPlayerStats,
+  formatDate,
   rankPlayer
 } from './discord-player-stats/stats-query.js';
 
@@ -313,6 +315,13 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       if (!this.leaderboardAttempted) await this.refreshLeaderboard();
       else if (this.leaderboardBuild) await this.leaderboardBuild;
       const stats = await fetchPlayerStats(this.options.database, link.steamID);
+      // The highlights are extras: the card is still sent, with empty highlights, when they fail.
+      const highlights = await fetchPlayerHighlights(this.options.database, link.steamID).catch(
+        (error) => {
+          this.verbose(1, `Could not read the highlights for ${link.steamID}: ${error.message}`);
+          return {};
+        }
+      );
       const background = await this.backgrounds?.pick();
       const card = this.renderCard(stats, {
         title: this.options.cardTitle,
@@ -320,6 +329,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         ranks: rankPlayer(this.leaderboard, stats, this.options.leaderboardMinimumDeaths),
         rankedPlayers: this.leaderboard?.size,
         unrankedNote: this.unrankedNote(stats),
+        highlights,
         background
       });
       await interaction.editReply({
@@ -332,13 +342,4 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       else await interaction.reply({ ...reply, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   }
-}
-
-function formatDate(date) {
-  return date.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC'
-  });
 }
