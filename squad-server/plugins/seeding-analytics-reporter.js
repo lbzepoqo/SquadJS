@@ -246,7 +246,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
           status: 'seeding',
           phaseStart: now,
           phasePeak: count,
-          seeders: this.server.players.map((player) => player.steamID),
+          seeders: this.server.players.map((player) => player.eosID),
           belowStartSince: null
         });
         // Refresh the config at the start of each phase.
@@ -282,7 +282,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     // status 'seeding'
     tracker.phasePeak = Math.max(tracker.phasePeak, count);
     const seeders = new Set(tracker.seeders);
-    for (const player of this.server.players) seeders.add(player.steamID);
+    for (const player of this.server.players) seeders.add(player.eosID);
     tracker.seeders = [...seeders];
 
     if (count > liveThreshold) {
