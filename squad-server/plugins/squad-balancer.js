@@ -683,7 +683,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
       for (const player of players) {
         if (String(player.teamID) !== teamId) continue;
         playerCount++;
-        const key = player.squadID != null ? player.squadID : `unassigned-${player.steamID}`;
+        const key = player.squadID != null ? player.squadID : `unassigned-${player.eosID}`;
         if (!squadMap[key]) squadMap[key] = { squadID: key, players: [] };
         squadMap[key].players.push(player);
       }
@@ -705,7 +705,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
           this.swappedPlayers.add(player.eosID);
           anySwitched = true;
         } catch (error) {
-          this.verbose(1, `Failed to switchTeam for ${player.steamID}: ${error.message}`);
+          this.verbose(1, `Failed to switchTeam for ${player.eosID}: ${error.message}`);
         }
       }
       if (anySwitched && !String(squad.squadID).startsWith('unassigned-')) {
@@ -861,7 +861,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
             prioritiesTriggered.add('Priority 2');
             recordSolo('priority2', player);
           } catch (error) {
-            this.verbose(1, `Failed to switch unassigned ${player.steamID}: ${error.message}`);
+            this.verbose(1, `Failed to switch unassigned ${player.eosID}: ${error.message}`);
           }
         }
       }
@@ -880,7 +880,7 @@ export default class SquadBalancer extends DiscordBasePlugin {
             prioritiesTriggered.add('Priority 3');
             recordSolo('priority3', player);
           } catch (error) {
-            this.verbose(1, `Failed to switch ${player.steamID}: ${error.message}`);
+            this.verbose(1, `Failed to switch ${player.eosID}: ${error.message}`);
           }
         }
       }
