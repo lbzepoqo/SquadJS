@@ -14,7 +14,7 @@ const TRACKER_SAVE_INTERVAL_MS = 5 * 60 * 1000;
 const CATCH_UP_DELAY_MS = 60 * 1000;
 
 function emptyState() {
-  return { snapshots: [], phases: [], alertedStuck: [], lastReportTs: null };
+  return { snapshots: [], phases: [], alertedStuck: [], lastReportTs: null, trackerConfig: null };
 }
 
 export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
@@ -90,7 +90,10 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
 
     this.tracker = null;
     this.lastTrackerSaveAt = 0;
-    this.phaseLiveConfig = null;
+    this.thresholds = null;
+    this.configReadSinceStart = false;
+    this.configReadFailing = false;
+    this.pendingConfigRead = null;
 
     this.boundOnUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
   }
@@ -98,6 +101,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
   async prepareToMount() {
     await super.prepareToMount();
     await this.loadState();
+    this.thresholds = trackerThresholds(this.state.trackerConfig);
     if (this.options.seedAlertedStuckFile) {
       await this.seedAlertedStuck();
     }
@@ -193,6 +197,53 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     return this.apiGet('/api/dbconfig/read/seeding_tracker');
   }
 
+  // Concurrent callers share one read, so a slow API does not start a new read on every update.
+  refreshTrackerConfig() {
+    if (!this.pendingConfigRead) {
+      this.pendingConfigRead = this.readTrackerConfig().finally(() => {
+        this.pendingConfigRead = null;
+      });
+    }
+    return this.pendingConfigRead;
+  }
+
+  // The last config read is kept in the state file, so the tracker keeps working after a restart while the
+  // Whitelister API is down. A failed read is logged once until a read succeeds again.
+  async readTrackerConfig() {
+    try {
+      const config = await this.fetchConfig();
+      const thresholds = trackerThresholds(config);
+      // An unusable response would replace a good saved config and stop the tracking again.
+      if (!thresholds) {
+        throw new Error(
+          `unusable thresholds (start ${config?.seeding_start_player_count}, live ${config?.seeding_player_threshold})`
+        );
+      }
+      const changed =
+        thresholds.startThreshold !== this.thresholds?.startThreshold ||
+        thresholds.liveThreshold !== this.thresholds?.liveThreshold;
+      this.thresholds = thresholds;
+      this.configReadSinceStart = true;
+      if (changed) {
+        this.state.trackerConfig = {
+          seeding_start_player_count: config.seeding_start_player_count,
+          seeding_player_threshold: config.seeding_player_threshold
+        };
+        this.scheduleSave();
+      }
+      if (this.configReadFailing) this.verbose(1, 'Seeding tracker config read again.');
+      this.configReadFailing = false;
+    } catch (error) {
+      if (!this.configReadFailing) {
+        const fallback = this.thresholds
+          ? 'Keeping the last config read.'
+          : 'Seeding is not tracked until it can be read.';
+        this.verbose(1, `Could not read the seeding tracker config: ${error.message}. ${fallback}`);
+      }
+      this.configReadFailing = true;
+    }
+  }
+
   // The tracker follows the Whitelister's seeding tracker, which counts seeding while
   // seeding_start_player_count <= players <= seeding_player_threshold. A phase starts when the server enters
   // that range from idle, and ends as "live" above the threshold or as "aborted" when the count stays below the
@@ -202,20 +253,19 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     const count = this.server.players.length;
     const now = Date.now();
 
-    if (!this.phaseLiveConfig) {
-      try {
-        this.phaseLiveConfig = await this.fetchConfig();
-      } catch {
-        return;
-      }
+    // The config is read after a restart until a read succeeds, so a change made while SquadJS was down is
+    // picked up, and again before an idle tracker can start a phase, so the phase uses the current thresholds.
+    // The saved config is used while the API cannot be read.
+    const mayStartPhase =
+      this.tracker.status === 'idle' && count >= (this.thresholds?.startThreshold ?? 0);
+    if (!this.thresholds || !this.configReadSinceStart || mayStartPhase) {
+      await this.refreshTrackerConfig();
+      if (!this.thresholds) return;
     }
-
-    const startThreshold = Number(this.phaseLiveConfig.seeding_start_player_count) || 2;
-    const liveThreshold = Number(this.phaseLiveConfig.seeding_player_threshold);
-    if (!liveThreshold) return;
+    const { startThreshold, liveThreshold } = this.thresholds;
 
     const trackerBefore = trackerFingerprint(this.tracker);
-    await this.advanceTracker(count, now, startThreshold, liveThreshold);
+    this.advanceTracker(count, now, startThreshold, liveThreshold);
     this.tracker.updatedAt = now;
     // The state file is saved when the tracker changes, and at least every TRACKER_SAVE_INTERVAL_MS so a
     // restart finds a recent updatedAt.
@@ -228,7 +278,7 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
     }
   }
 
-  async advanceTracker(count, now, startThreshold, liveThreshold) {
+  advanceTracker(count, now, startThreshold, liveThreshold) {
     const tracker = this.tracker;
 
     if (tracker.status === 'unknown') {
@@ -249,12 +299,6 @@ export default class SeedingAnalyticsReporter extends DiscordBasePlugin {
           seeders: this.server.players.map((player) => player.eosID),
           belowStartSince: null
         });
-        // Refresh the config at the start of each phase.
-        try {
-          this.phaseLiveConfig = await this.fetchConfig();
-        } catch {
-          // Keep the cached config.
-        }
         this.verbose(1, `Seeding phase started with ${count} players.`);
       }
       return;
@@ -643,6 +687,19 @@ function buildLeaderboardLines(players, previousSnapshot, requiredPoints, size) 
 
 function trackerFingerprint(tracker) {
   return JSON.stringify({ ...tracker, updatedAt: null });
+}
+
+// The thresholds from a Whitelister seeding_tracker config, or null when they cannot be used. A missing start
+// count means 2, as before.
+function trackerThresholds(config) {
+  const startThreshold = Number(config?.seeding_start_player_count) || 2;
+  const liveThreshold = Number(config?.seeding_player_threshold);
+  const usable =
+    Number.isInteger(startThreshold) &&
+    Number.isInteger(liveThreshold) &&
+    startThreshold >= 1 &&
+    startThreshold <= liveThreshold;
+  return usable ? { startThreshold, liveThreshold } : null;
 }
 
 function msUntilHourUTC(hourUTC) {
