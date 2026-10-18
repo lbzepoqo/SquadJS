@@ -79,7 +79,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
   }
 
   async onEntry(info) {
-    const { player } = info;
+    const player = this.eventPlayer(info);
     this.adminsInCam[player.eosID] = { enteredAt: new Date(), player };
     this.adminCamCounts[player.eosID] = (this.adminCamCounts[player.eosID] || 0) + 1;
 
@@ -116,7 +116,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
       });
     }
 
-    await this.warnInGameAdmins(info, 'entered');
+    await this.warnInGameAdmins(player, 'entered');
     await this.server.rcon.warn(
       player.eosID,
       `WARNING: Please state your intention in admin chat for using admin cam.`
@@ -130,7 +130,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
   }
 
   async onExit(info) {
-    const { player } = info;
+    const player = this.eventPlayer(info);
     const tracked = this.adminsInCam[player.eosID];
 
     // The tracked entry time is preferred. info.duration is 0 when SquadJS started while the
@@ -185,18 +185,24 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
       });
     }
 
-    await this.warnInGameAdmins(info, 'left');
+    await this.warnInGameAdmins(player, 'left');
     this.verbose(1, `Admin has left admin cam: ${player.name}`);
   }
 
-  async warnInGameAdmins(info, state) {
+  // info.player is null when the admin is missing from the player list (for example after a
+  // disconnect); the RCON event itself always carries the name and IDs.
+  eventPlayer(info) {
+    return info.player ?? { name: info.name, eosID: info.eosID, steamID: info.steamID };
+  }
+
+  async warnInGameAdmins(camPlayer, state) {
     if (!this.options.warnInGameAdmins) return;
 
     await this.server.updatePlayerList();
     const onlineAdmins = this.server.getAdminsWithPermission('canseeadminchat', 'player');
     for (const admin of onlineAdmins) {
-      if (admin.eosID === info.player.eosID) continue;
-      await this.server.rcon.warn(admin.eosID, `[${info.player.name}] ${state} admin camera.`);
+      if (admin.eosID === camPlayer.eosID) continue;
+      await this.server.rcon.warn(admin.eosID, `[${camPlayer.name}] ${state} admin camera.`);
     }
   }
 
