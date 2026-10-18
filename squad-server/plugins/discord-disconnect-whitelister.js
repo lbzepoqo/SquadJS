@@ -1,8 +1,11 @@
+import fs from 'fs';
 import DiscordBasePlugin from './discord-base-plugin.js';
 import axios from 'axios';
 
 // The kick arrives over RCON and the disconnect through the log, so either can come first.
 const KICK_DISCONNECT_WINDOW_MS = 60 * 1000;
+// Saved links older than this are dropped at startup.
+const LINK_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
   static get description() {
@@ -78,6 +81,18 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
         description:
           'How often to refresh the remote whitelist cache in minutes. 0 disables periodic refresh.',
         default: 10
+      },
+      linkCacheHours: {
+        required: false,
+        description:
+          'Hours a linked Discord account found earlier is reused without asking MySquadStats or the ' +
+          'Whitelister again. An older link, up to 30 days, is still used when a lookup fails.',
+        default: 24
+      },
+      linkCacheFile: {
+        required: false,
+        description: 'File that keeps the linked accounts across restarts.',
+        default: './discord-disconnect-whitelister-links-state.json'
       }
     };
   }
@@ -102,6 +117,8 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
     this.allowConfigReload = true;
     this.whitelistCache = { parsedData: null, timestamp: 0, isLoading: false };
     this.whitelistRefreshInterval = null;
+    this.linkCache = new Map();
+    this.linkCacheWrite = Promise.resolve();
   }
 
   async prepareToMount() {
@@ -118,6 +135,7 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
 
   async mount() {
     this.stopped = false;
+    this.loadLinkCache();
     this.server.on('PLAYER_DISCONNECTED', this.onPlayerDisconnected);
     this.server.on('PLAYER_KICKED', this.onPlayerKicked);
     this.server.on('ROUND_ENDED', this.onRoundEnded);
@@ -221,47 +239,10 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
       return;
     }
 
-    let playerName = name ?? `Unknown (${eosID})`;
-    let discordUserId = null;
-    let resolvedSteamID = steamID;
-
-    // playerLink answers "Access Token is Required" to requests without a token.
-    if (this.options.mySquadStatsAccessToken) {
-      try {
-        const response = await axios.get('https://api.mysquadstats.com/playerLink', {
-          params: { eosID, accessToken: this.options.mySquadStatsAccessToken },
-          timeout: 10000
-        });
-        const data = response.data;
-        if (data?.status === 'Success' && data.data) {
-          if (data.data.lastName) playerName = data.data.lastName.trim();
-          if (data.data.discordID) discordUserId = data.data.discordID;
-          if (!resolvedSteamID && data.data.steamID) resolvedSteamID = data.data.steamID;
-        } else if (!/not found/i.test(data?.message ?? '')) {
-          // Token errors such as "Invalid Access Token" also arrive with HTTP 200.
-          this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${data?.message}`);
-        }
-      } catch (error) {
-        this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${error.message}`);
-      }
-    }
-
-    if (!discordUserId) {
-      try {
-        const response = await axios.get(
-          `${this.options.whitelisterApiUrl}/api/players/read/from/eosId/${eosID}?apiKey=${this.options.whitelisterApiKey}`,
-          { timeout: 10000 }
-        );
-        const data = response.data;
-        if (data.discord_user_id) {
-          discordUserId = data.discord_user_id;
-          if (data.username && playerName === `Unknown (${eosID})`)
-            playerName = data.username.trim();
-        }
-      } catch (error) {
-        this.verbose(1, `Whitelister API lookup failed for ${eosID}: ${error.message}`);
-      }
-    }
+    const link = await this.findLinkedAccount(eosID);
+    const playerName = name ?? link?.name ?? `Unknown (${eosID})`;
+    const discordUserId = link?.discordUserId ?? null;
+    const resolvedSteamID = steamID ?? link?.steamID ?? null;
 
     if (this.stopped) return;
     // The kick can arrive while the account lookups are running.
@@ -300,6 +281,134 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
       this.verbose(1, `Temporary reserve write failed for ${eosID}: ${error.message}`);
       await this.sendFailureEmbed(eosID, 'Error Message', error.message);
     }
+  }
+
+  // A linked account rarely changes, so a link found earlier is reused for linkCacheHours without a
+  // request. An older link is used only when a lookup fails, so an outage of MySquadStats or the
+  // Whitelister does not lock out players who were linked before.
+  async findLinkedAccount(eosID) {
+    const cached = this.linkCache.get(eosID);
+    const freshMs = this.options.linkCacheHours * 60 * 60 * 1000;
+    if (cached && Date.now() - cached.linkedAt < freshMs) return cached;
+
+    // Each lookup returns a link, null when the player is not linked, or undefined when it failed.
+    const answers = [await this.lookUpMySquadStats(eosID)];
+    if (!answers[0]) answers.push(await this.lookUpWhitelister(eosID));
+
+    const link = answers.find(Boolean);
+    if (link) {
+      this.linkCache.set(eosID, link);
+      this.saveLinkCache();
+      return link;
+    }
+    if (!answers.includes(undefined)) {
+      // Every service that was asked answered that the player is not linked.
+      if (cached) {
+        this.linkCache.delete(eosID);
+        this.saveLinkCache();
+      }
+      return null;
+    }
+    if (cached) {
+      this.verbose(
+        1,
+        `Lookup failed for ${eosID}; using the link saved at ${new Date(
+          cached.linkedAt
+        ).toISOString()}.`
+      );
+      return cached;
+    }
+    return null;
+  }
+
+  async lookUpMySquadStats(eosID) {
+    // playerLink answers "Access Token is Required" to requests without a token.
+    if (!this.options.mySquadStatsAccessToken) return null;
+    try {
+      const response = await axios.get('https://api.mysquadstats.com/playerLink', {
+        params: { eosID, accessToken: this.options.mySquadStatsAccessToken },
+        timeout: 10000
+      });
+      const data = response.data;
+      if (data?.status === 'Success' && data.data) {
+        if (!data.data.discordID) return null;
+        return {
+          discordUserId: data.data.discordID,
+          steamID: data.data.steamID ?? null,
+          name: data.data.lastName?.trim() || null,
+          source: 'MySquadStats',
+          linkedAt: Date.now()
+        };
+      }
+      if (/not found/i.test(data?.message ?? '')) return null;
+      // Token errors such as "Invalid Access Token" also arrive with HTTP 200.
+      this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${data?.message}`);
+    } catch (error) {
+      this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${error.message}`);
+    }
+    return undefined;
+  }
+
+  async lookUpWhitelister(eosID) {
+    try {
+      const response = await axios.get(
+        `${this.options.whitelisterApiUrl}/api/players/read/from/eosId/${eosID}?apiKey=${this.options.whitelisterApiKey}`,
+        { timeout: 10000 }
+      );
+      const data = response.data;
+      // A rejected key gets the login page with status 200 instead of an error.
+      if (typeof data === 'string' && data.trimStart().startsWith('<')) {
+        this.verbose(1, 'Whitelister returned its login page: check whitelisterApiKey.');
+        return undefined;
+      }
+      if (!data?.discord_user_id) return null;
+      return {
+        discordUserId: data.discord_user_id,
+        steamID: data.steamid64 ?? null,
+        name: data.username?.trim() || null,
+        source: 'Whitelister',
+        linkedAt: Date.now()
+      };
+    } catch (error) {
+      this.verbose(1, `Whitelister API lookup failed for ${eosID}: ${error.message}`);
+      return undefined;
+    }
+  }
+
+  loadLinkCache() {
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.options.linkCacheFile, 'utf8'));
+      const oldest = Date.now() - LINK_CACHE_MAX_AGE_MS;
+      for (const [eosID, link] of Object.entries(saved.links ?? {})) {
+        if (link?.discordUserId && link.linkedAt > oldest) this.linkCache.set(eosID, link);
+      }
+      this.verbose(
+        1,
+        `Loaded ${this.linkCache.size} linked accounts from ${this.options.linkCacheFile}.`
+      );
+    } catch (error) {
+      if (error.code !== 'ENOENT')
+        this.verbose(1, `Could not read ${this.options.linkCacheFile}: ${error.message}`);
+    }
+  }
+
+  // Writes are queued so two saves never share the temporary file. The temporary file is renamed, so a
+  // stop during the write cannot leave a broken file.
+  saveLinkCache() {
+    this.linkCacheWrite = this.linkCacheWrite.then(async () => {
+      const temporaryFile = `${this.options.linkCacheFile}.tmp`;
+      const state = {
+        savedAt: new Date().toISOString(),
+        links: Object.fromEntries(this.linkCache)
+      };
+      try {
+        await fs.promises.writeFile(temporaryFile, JSON.stringify(state));
+        await fs.promises.rename(temporaryFile, this.options.linkCacheFile);
+      } catch (error) {
+        this.verbose(1, `Could not write ${this.options.linkCacheFile}: ${error.message}`);
+      }
+    });
+    return this.linkCacheWrite;
   }
 
   async sendSuccessEmbed(playerName, eosID, steamID, discordUserId, status = 'unconfirmed') {

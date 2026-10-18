@@ -770,7 +770,17 @@ Join {{server.name}} and help us seed.</code></pre></li>
            <h6>Description</h6>
            <p>How often to refresh the remote whitelist cache in minutes. 0 disables periodic refresh.</p>
            <h6>Default</h6>
-           <pre><code>10</code></pre></li></ul>
+           <pre><code>10</code></pre></li>
+<li><h4>linkCacheHours</h4>
+           <h6>Description</h6>
+           <p>Hours a linked Discord account found earlier is reused without asking MySquadStats or the Whitelister again. An older link, up to 30 days, is still used when a lookup fails.</p>
+           <h6>Default</h6>
+           <pre><code>24</code></pre></li>
+<li><h4>linkCacheFile</h4>
+           <h6>Description</h6>
+           <p>File that keeps the linked accounts across restarts.</p>
+           <h6>Default</h6>
+           <pre><code>./discord-disconnect-whitelister-links-state.json</code></pre></li></ul>
         </details>
 
 <details>

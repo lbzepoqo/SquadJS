@@ -183,7 +183,9 @@
       "whitelistDurationHours": 0.1,
       "reloadDebounceTime": 5000,
       "blockConfigReloadDuringIntermission": true,
-      "whitelistRefreshIntervalMinutes": 10
+      "whitelistRefreshIntervalMinutes": 10,
+      "linkCacheHours": 24,
+      "linkCacheFile": "./discord-disconnect-whitelister-links-state.json"
     },
     {
       "plugin": "DiscordAdminSyncChat",
