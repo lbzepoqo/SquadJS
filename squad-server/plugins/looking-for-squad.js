@@ -34,7 +34,12 @@ export default class LookingForSquad extends BasePlugin {
     super(server, options, connectors);
 
     this.onChatMessage = this.onChatMessage.bind(this);
-    this.warn = (playerID, msg) => this.server.rcon.warn(playerID, msg);
+    // Callers do not await warnings, so a failed warn is logged here instead of becoming an unhandled
+    // rejection.
+    this.warn = (eosID, message) =>
+      this.server.rcon
+        .warn(eosID, message)
+        .catch((error) => this.verbose(1, `Could not warn ${eosID}: ${error.message}`));
     this.lastUsed = new Map(); // Store last used time for rate limiting
   }
 
