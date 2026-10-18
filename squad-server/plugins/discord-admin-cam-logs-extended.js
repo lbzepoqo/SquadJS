@@ -1,4 +1,5 @@
 import DiscordAdminCamLogs from './discord-admin-cam-logs.js';
+import { steamProfileUrl } from '../utils/player-links.js';
 
 export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
   static get description() {
@@ -79,10 +80,10 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
 
   async onEntry(info) {
     const { player } = info;
-    this.adminsInCam[player.steamID] = { enteredAt: new Date(), player };
-    this.adminCamCounts[player.steamID] = (this.adminCamCounts[player.steamID] || 0) + 1;
+    this.adminsInCam[player.eosID] = { enteredAt: new Date(), player };
+    this.adminCamCounts[player.eosID] = (this.adminCamCounts[player.eosID] || 0) + 1;
 
-    const entryCount = this.adminCamCounts[player.steamID];
+    const entryCount = this.adminCamCounts[player.eosID];
     this.verbose(1, `Admin ${player.name} has entered admin cam ${entryCount} time(s) this match.`);
 
     let notificationString = '';
@@ -117,7 +118,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
 
     await this.warnInGameAdmins(info, 'entered');
     await this.server.rcon.warn(
-      player.steamID,
+      player.eosID,
       `WARNING: Please state your intention in admin chat for using admin cam.`
     );
 
@@ -125,12 +126,12 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
 
     // squadID is null for an admin who is not in a squad.
     if (this.options.removePlayerFromSquad && Number(player.squadID) > 0)
-      await this.server.rcon.execute(`AdminRemovePlayerFromSquad ${player.steamID}`);
+      await this.server.rcon.execute(`AdminRemovePlayerFromSquadById ${player.playerID}`);
   }
 
   async onExit(info) {
     const { player } = info;
-    const tracked = this.adminsInCam[player.steamID];
+    const tracked = this.adminsInCam[player.eosID];
 
     // The tracked entry time is preferred. info.duration is 0 when SquadJS started while the
     // admin was already in admin camera.
@@ -139,7 +140,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
     if (tracked?.enteredAt) {
       durationMs = Date.now() - tracked.enteredAt.getTime();
       calculationMethod = 'tracked';
-      delete this.adminsInCam[player.steamID];
+      delete this.adminsInCam[player.eosID];
     } else {
       durationMs = info.duration;
       calculationMethod = 'fallback';
@@ -147,7 +148,7 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
     const durationSeconds = Math.round(durationMs / 1000);
     const potentialEdgeCase = calculationMethod === 'fallback' && durationSeconds === 0;
     const formattedDuration = this.formatDuration(durationSeconds);
-    const entryCount = this.adminCamCounts[player.steamID] || 1;
+    const entryCount = this.adminCamCounts[player.eosID] || 1;
 
     this.verbose(
       1,
@@ -192,10 +193,10 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
     if (!this.options.warnInGameAdmins) return;
 
     await this.server.updatePlayerList();
-    const admins = await this.server.getAdminsWithPermission('canseeadminchat');
-    for (const player of this.server.players) {
-      if (!admins.includes(player.steamID) || info.player.steamID === player.steamID) continue;
-      await this.server.rcon.warn(player.steamID, `[${info.player.name}] ${state} admin camera.`);
+    const onlineAdmins = this.server.getAdminsWithPermission('canseeadminchat', 'player');
+    for (const admin of onlineAdmins) {
+      if (admin.eosID === info.player.eosID) continue;
+      await this.server.rcon.warn(admin.eosID, `[${info.player.name}] ${state} admin camera.`);
     }
   }
 
@@ -209,11 +210,12 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
   }
 
   buildPlayerFields(player) {
+    const profileUrl = steamProfileUrl(player.steamID);
     return [
       { name: "Admin's Name", value: player.name, inline: true },
       {
         name: "Admin's SteamID",
-        value: `[${player.steamID}](https://steamcommunity.com/profiles/${player.steamID})`,
+        value: profileUrl ? `[${player.steamID}](${profileUrl})` : 'none',
         inline: true
       },
       { name: "Admin's EosID", value: player.eosID, inline: true }
@@ -221,8 +223,11 @@ export default class DiscordAdminCamLogsExtended extends DiscordAdminCamLogs {
   }
 
   formatPlainPlayer(player) {
-    const profileUrl = `https://steamcommunity.com/profiles/${player.steamID}`;
-    return `[\`${player.name}\`](<${profileUrl}>) (${player.steamID} [↗](<${profileUrl}>)) EOS: \`${player.eosID}\``;
+    const profileUrl = steamProfileUrl(player.steamID);
+    const steamText = profileUrl
+      ? `[\`${player.name}\`](<${profileUrl}>) (${player.steamID} [↗](<${profileUrl}>))`
+      : `\`${player.name}\``;
+    return `${steamText} EOS: \`${player.eosID}\``;
   }
 
   formatTime(time) {
