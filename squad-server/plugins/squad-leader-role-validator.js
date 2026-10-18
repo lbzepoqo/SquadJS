@@ -405,7 +405,7 @@ export default class SquadLeaderRoleValidator extends DiscordBasePlugin {
           {
             name: '👤 Squad Leader',
             value: `**Name:** ${disbandInfo.squadLeader.name}\n**SteamID:** ${
-              disbandInfo.squadLeader.steamID
+              disbandInfo.squadLeader.steamID ?? 'none'
             }\n**Role:** ${disbandInfo.squadLeader.role || 'None'}`,
             inline: false
           },
