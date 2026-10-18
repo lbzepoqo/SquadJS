@@ -332,7 +332,7 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <pre><code>10485760</code></pre></li>
 <li><h4>backgroundRefreshInterval</h4>
            <h6>Description</h6>
-           <p>Milliseconds between two reads of the background channel, at least 10 minutes. New, changed and deleted posts are also picked up within seconds when the bot sees the change.</p>
+           <p>Milliseconds between two reads of the background channel, at least 10 minutes. New and deleted posts, and posts that gain or lose the tag, are also picked up within seconds. A photo replaced in an existing post is picked up after a restart.</p>
            <h6>Default</h6>
            <pre><code>3600000</code></pre></li></ul>
         </details>

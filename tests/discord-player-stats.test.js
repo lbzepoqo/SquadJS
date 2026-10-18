@@ -134,22 +134,30 @@ describe('DiscordPlayerStats queries', () => {
 });
 
 describe('DiscordPlayerStats backgrounds', () => {
-  it('takes the first decodable image within the size limit and says why others were skipped', () => {
-    const attachment = (name, contentType, size) => ({ name, contentType, size });
+  it('takes the first decodable image within the size and pixel limits and says why others were skipped', () => {
+    const attachment = (name, contentType, size, width = 4000, height = 3000) => ({
+      name,
+      contentType,
+      size,
+      width,
+      height
+    });
     const message = {
       attachments: new Map([
-        ['1', attachment('notes.txt', 'text/plain', 10)],
+        ['1', attachment('notes.txt', 'text/plain', 10, null, null)],
         ['2', attachment('shot.webp', 'image/webp', 10)],
-        ['3', attachment('huge.png', 'image/png', 50)],
-        ['4', attachment('tank.jpg', 'image/jpeg', 20)]
+        ['3', attachment('huge.png', 'image/png', 2000000)],
+        ['4', attachment('panorama.jpg', 'image/jpeg', 900000, 16000, 8000)],
+        ['5', attachment('tank.jpg', 'image/jpeg', 900000)]
       ])
     };
-    const { attachment: chosen, reasons } = backgroundAttachment(message, 30);
+    const { attachment: chosen, reasons } = backgroundAttachment(message, 1500000);
 
     assert.strictEqual(chosen.name, 'tank.jpg');
     assert.deepStrictEqual(reasons, [
-      'shot.webp is image/webp, use PNG or JPEG',
-      'huge.png is larger than 0 MB'
+      'shot.webp is image/webp, use PNG, JPEG or GIF',
+      'huge.png is larger than 1.4 MB',
+      'panorama.jpg is 16000x8000 pixels, more than 50 megapixels'
     ]);
     assert.strictEqual(backgroundAttachment({ attachments: new Map() }, 30).attachment, null);
   });

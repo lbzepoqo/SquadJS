@@ -132,8 +132,9 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       backgroundRefreshInterval: {
         required: false,
         description:
-          'Milliseconds between two reads of the background channel, at least 10 minutes. New, ' +
-          'changed and deleted posts are also picked up within seconds when the bot sees the change.',
+          'Milliseconds between two reads of the background channel, at least 10 minutes. New and deleted ' +
+          'posts, and posts that gain or lose the tag, are also picked up within seconds. A photo replaced ' +
+          'in an existing post is picked up after a restart.',
         default: 60 * 60 * 1000
       }
     };
