@@ -1,4 +1,6 @@
+import { iterateIDs, lowerID } from 'core/id-parser';
 import DiscordBasePlugin from './discord-base-plugin.js';
+import { battlemetricsPlayerUrl, playerNameLink, steamProfileUrl } from '../utils/player-links.js';
 
 export default class SquadCreationLogger extends DiscordBasePlugin {
   static get description() {
@@ -47,7 +49,7 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
 
     // Pattern to match squad creation log lines
     this.squadCreationPattern =
-      /^\[([0-9.:-]+)]\[(\s*\d+)]LogSquad: (.+) \(Online IDs: EOS: ([0-9a-f]+) steam: (\d+)\) has created Squad (\d+) \(Squad Name: (.+)\) on (.+)$/;
+      /^\[([0-9.:-]+)]\[(\s*\d+)]LogSquad: (.+) \(Online IDs:([^)]+)\) has created Squad (\d+) \(Squad Name: (.+)\) on (.+)$/;
   }
 
   async mount() {
@@ -64,8 +66,12 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
     const match = this.squadCreationPattern.exec(line);
     if (!match) return;
 
-    const [, timestamp, chainID, playerName, eosID, steamID, squadNumber, squadName, faction] =
-      match;
+    const [, timestamp, chainID, playerName, onlineIDs, squadNumber, squadName, faction] = match;
+    // Epic Games Store players have "EOS: ... epic: ..." and no steam entry.
+    const platformIDs = {};
+    iterateIDs(onlineIDs).forEach((platform, id) => {
+      platformIDs[lowerID(platform)] = id;
+    });
 
     this.verbose(
       2,
@@ -76,8 +82,8 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
       timestamp,
       chainID,
       playerName: playerName.trim(),
-      eosID,
-      steamID,
+      eosID: platformIDs.eosID,
+      steamID: platformIDs.steamID ?? null,
       squadNumber: parseInt(squadNumber),
       squadName: squadName.trim(),
       faction: faction.trim()
@@ -85,19 +91,23 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
   }
 
   async sendSquadCreationNotification(data) {
-    const steamProfileUrl = `https://steamcommunity.com/profiles/${data.steamID}`;
     const timestampUnix = this.parseSquadTimestamp(data.timestamp);
 
     if (this.options.embedFormat) {
-      await this.sendEmbedNotification(data, steamProfileUrl, timestampUnix);
+      await this.sendEmbedNotification(data, timestampUnix);
     } else {
-      await this.sendTextNotification(data, steamProfileUrl, timestampUnix);
+      await this.sendTextNotification(data, timestampUnix);
     }
   }
 
-  async sendEmbedNotification(data, steamProfileUrl, timestampUnix) {
+  async sendEmbedNotification(data, timestampUnix) {
+    const profileUrl = steamProfileUrl(data.steamID);
     const fields = [
-      { name: 'Player', value: `[${data.playerName}](${steamProfileUrl})`, inline: true }
+      {
+        name: 'Player',
+        value: profileUrl ? `[${data.playerName}](${profileUrl})` : data.playerName,
+        inline: true
+      }
     ];
 
     if (this.options.showSquadNumber) {
@@ -115,7 +125,7 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
     }
 
     fields.push(
-      { name: 'Steam ID', value: data.steamID, inline: true },
+      { name: 'Steam ID', value: data.steamID ?? 'none', inline: true },
       { name: 'EOS ID', value: data.eosID, inline: true }
     );
 
@@ -135,11 +145,11 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
     }
   }
 
-  async sendTextNotification(data, steamProfileUrl, timestampUnix) {
-    const bmUrl = `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${data.eosID}&method=quick&redirect=1`;
-    const cblUrl = `https://communitybanlist.com/search/${data.steamID}`;
-
-    let message = `[<t:${timestampUnix}:D> <t:${timestampUnix}:T>] [\`${data.playerName}\`](<${steamProfileUrl}>)`;
+  async sendTextNotification(data, timestampUnix) {
+    let message = `[<t:${timestampUnix}:D> <t:${timestampUnix}:T>] ${playerNameLink(
+      data.playerName,
+      data.steamID
+    )}`;
 
     if (this.options.showSquadNumber) {
       message += ` created Squad ${data.squadNumber} - **${data.squadName}**`;
@@ -151,7 +161,8 @@ export default class SquadCreationLogger extends DiscordBasePlugin {
       message += ` on ${data.faction}`;
     }
 
-    message += ` [[BM](<${bmUrl}>)][[CBL](<${cblUrl}>)]`;
+    message += ` [[BM](<${battlemetricsPlayerUrl(data)}>)]`;
+    if (data.steamID) message += `[[CBL](<https://communitybanlist.com/search/${data.steamID}>)]`;
 
     try {
       const messageObject = {
