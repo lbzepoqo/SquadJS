@@ -14,7 +14,6 @@ export function steamProfileUrl(steamID) {
  */
 export function battlemetricsPlayerUrl({ steamID, eosID }) {
   const searchID = steamID || eosID;
-  if (!searchID) return null;
   return `${BATTLEMETRICS_RCON_PLAYERS_URL}?filter[search]=${searchID}&method=quick&redirect=1`;
 }
 
