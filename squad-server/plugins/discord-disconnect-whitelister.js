@@ -8,7 +8,7 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
   static get description() {
     return (
       'Auto-whitelists players who trigger <code>PLAYER_DISCONNECTED</code> through AdminSync in Admins.cfg. ' +
-      'Only processes players with a linked Discord account (checked via MySquadStats, then the Whitelister API). ' +
+      'Only processes players with a linked Discord account (checked via MySquadStats when an access token is set, then the Whitelister API). ' +
       'Players already in a reserve-capable group or kicked by an admin or plugin are skipped. ' +
       'Optionally logs results to a Discord channel.'
     );
@@ -41,6 +41,13 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
       whitelisterApiKey: {
         required: true,
         description: 'The API key for the Squad Whitelister.',
+        default: ''
+      },
+      mySquadStatsAccessToken: {
+        required: false,
+        description:
+          'MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to ' +
+          'look up linked accounts on the Whitelister only.',
         default: ''
       },
       whitelistDurationHours: {
@@ -218,18 +225,25 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
     let discordUserId = null;
     let resolvedSteamID = steamID;
 
-    try {
-      const response = await axios.get(`https://api.mysquadstats.com/playerLink?eosID=${eosID}`, {
-        timeout: 10000
-      });
-      const data = response.data;
-      if (data.successStatus === 'Success' && data.data) {
-        if (data.data.lastName) playerName = data.data.lastName.trim();
-        if (data.data.discordID) discordUserId = data.data.discordID;
-        if (!resolvedSteamID && data.data.steamID) resolvedSteamID = data.data.steamID;
+    // playerLink answers "Access Token is Required" to requests without a token.
+    if (this.options.mySquadStatsAccessToken) {
+      try {
+        const response = await axios.get('https://api.mysquadstats.com/playerLink', {
+          params: { eosID, accessToken: this.options.mySquadStatsAccessToken },
+          timeout: 10000
+        });
+        const data = response.data;
+        if (data?.status === 'Success' && data.data) {
+          if (data.data.lastName) playerName = data.data.lastName.trim();
+          if (data.data.discordID) discordUserId = data.data.discordID;
+          if (!resolvedSteamID && data.data.steamID) resolvedSteamID = data.data.steamID;
+        } else if (!/not found/i.test(data?.message ?? '')) {
+          // Token errors such as "Invalid Access Token" also arrive with HTTP 200.
+          this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${data?.message}`);
+        }
+      } catch (error) {
+        this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${error.message}`);
       }
-    } catch (error) {
-      this.verbose(1, `MySquadStats lookup failed for ${eosID}: ${error.message}`);
     }
 
     if (!discordUserId) {

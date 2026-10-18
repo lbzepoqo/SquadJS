@@ -12,6 +12,7 @@ export default class LinkResolver {
     whitelisterApiUrl,
     whitelisterApiKey,
     useMySquadStats = true,
+    mySquadStatsAccessToken,
     cacheMs = 300000,
     missCacheMs = 30000,
     log
@@ -19,6 +20,7 @@ export default class LinkResolver {
     this.whitelisterApiUrl = whitelisterApiUrl?.replace(/\/+$/, '');
     this.whitelisterApiKey = whitelisterApiKey;
     this.useMySquadStats = useMySquadStats;
+    this.mySquadStatsAccessToken = mySquadStatsAccessToken;
     this.cacheMs = cacheMs;
     this.missCacheMs = missCacheMs;
     this.log = log ?? (() => {});
@@ -64,13 +66,19 @@ export default class LinkResolver {
   }
 
   async fromMySquadStats(discordUserID) {
-    if (!this.useMySquadStats) return null;
+    // playerLink answers "Access Token is Required" to requests without a token.
+    if (!this.useMySquadStats || !this.mySquadStatsAccessToken) return null;
     try {
       const response = await axios.get('https://api.mysquadstats.com/playerLink', {
-        params: { discordID: discordUserID },
+        params: { discordID: discordUserID, accessToken: this.mySquadStatsAccessToken },
         timeout: REQUEST_TIMEOUT_MS
       });
-      const steamID = response.data?.status === 'Success' ? response.data.data?.steamID : null;
+      const data = response.data;
+      if (data?.status !== 'Success' && !/not found/i.test(data?.message ?? '')) {
+        // Token errors such as "Invalid Access Token" also arrive with HTTP 200.
+        this.log(`MySquadStats lookup failed for Discord user ${discordUserID}: ${data?.message}`);
+      }
+      const steamID = data?.status === 'Success' ? data.data?.steamID : null;
       return steamID ? { steamID, source: 'MySquadStats' } : null;
     } catch (error) {
       this.log(`MySquadStats lookup failed for Discord user ${discordUserID}: ${error.message}`);

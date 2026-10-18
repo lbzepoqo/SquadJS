@@ -79,8 +79,17 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       },
       useMySquadStats: {
         required: false,
-        description: 'Look up the account link on MySquadStats when the Whitelister has none.',
+        description:
+          'Look up the account link on MySquadStats when the Whitelister has none. Needs ' +
+          '<code>mySquadStatsAccessToken</code>.',
         default: true
+      },
+      mySquadStatsAccessToken: {
+        required: false,
+        description:
+          'MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to ' +
+          'skip the MySquadStats lookup.',
+        default: ''
       },
       linkUrl: {
         required: false,
@@ -137,6 +146,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       whitelisterApiUrl: this.options.whitelisterApiUrl,
       whitelisterApiKey: this.options.whitelisterApiKey,
       useMySquadStats: this.options.useMySquadStats,
+      mySquadStatsAccessToken: this.options.mySquadStatsAccessToken,
       log: (message) => this.verbose(1, message)
     });
     this.leaderboard = null;

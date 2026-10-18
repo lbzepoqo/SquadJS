@@ -291,9 +291,14 @@ Interested in creating your own plugin? [See more here](./squad-server/plugins/r
            <pre><code></code></pre></li>
 <li><h4>useMySquadStats</h4>
            <h6>Description</h6>
-           <p>Look up the account link on MySquadStats when the Whitelister has none.</p>
+           <p>Look up the account link on MySquadStats when the Whitelister has none. Needs <code>mySquadStatsAccessToken</code>.</p>
            <h6>Default</h6>
            <pre><code>true</code></pre></li>
+<li><h4>mySquadStatsAccessToken</h4>
+           <h6>Description</h6>
+           <p>MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to skip the MySquadStats lookup.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
 <li><h4>linkUrl</h4>
            <h6>Description</h6>
            <p>Page where players link their game account, shown when no linked account is found.</p>
@@ -707,7 +712,7 @@ Join {{server.name}} and help us seed.</code></pre></li>
 <details>
           <summary>DiscordDisconnectWhitelister</summary>
           <h2>DiscordDisconnectWhitelister</h2>
-          <p>Auto-whitelists players who trigger <code>PLAYER_DISCONNECTED</code> through AdminSync in Admins.cfg. Only processes players with a linked Discord account (checked via MySquadStats, then the Whitelister API). Players already in a reserve-capable group or kicked by an admin or plugin are skipped. Optionally logs results to a Discord channel.</p>
+          <p>Auto-whitelists players who trigger <code>PLAYER_DISCONNECTED</code> through AdminSync in Admins.cfg. Only processes players with a linked Discord account (checked via MySquadStats when an access token is set, then the Whitelister API). Players already in a reserve-capable group or kicked by an admin or plugin are skipped. Optionally logs results to a Discord channel.</p>
           <h3>Options</h3>
           <ul><li><h4>discordClient (Required)</h4>
            <h6>Description</h6>
@@ -733,6 +738,11 @@ Join {{server.name}} and help us seed.</code></pre></li>
 <li><h4>whitelisterApiKey (Required)</h4>
            <h6>Description</h6>
            <p>The API key for the Squad Whitelister.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li>
+<li><h4>mySquadStatsAccessToken</h4>
+           <h6>Description</h6>
+           <p>MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to look up linked accounts on the Whitelister only.</p>
            <h6>Default</h6>
            <pre><code></code></pre></li>
 <li><h4>whitelistDurationHours</h4>
