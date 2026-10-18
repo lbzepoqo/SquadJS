@@ -34,7 +34,7 @@ export default class LookingForSquad extends BasePlugin {
     super(server, options, connectors);
 
     this.onChatMessage = this.onChatMessage.bind(this);
-    this.warn = (steamid, msg) => this.server.rcon.warn(steamid, msg);
+    this.warn = (playerID, msg) => this.server.rcon.warn(playerID, msg);
     this.lastUsed = new Map(); // Store last used time for rate limiting
   }
 
@@ -56,26 +56,26 @@ export default class LookingForSquad extends BasePlugin {
 
   // Handle general invite request (!inv or !invite or !lfs)
   async handleGeneralInvite(event) {
-    const { steamID } = event;
+    const { eosID } = event;
 
     // Check for cooldown before processing any invite commands
-    if (this.shouldRateLimit(steamID)) {
-      const remaining = this.getCooldownRemaining(steamID);
-      this.warn(steamID, `Please wait ${remaining} seconds before sending another invite request.`);
+    if (this.shouldRateLimit(eosID)) {
+      const remaining = this.getCooldownRemaining(eosID);
+      this.warn(eosID, `Please wait ${remaining} seconds before sending another invite request.`);
       return;
     }
 
     try {
-      const player = await this.getPlayer(steamID);
+      const player = await this.getPlayer(eosID);
       if (!player) {
-        this.warn(steamID, 'Could not find your player information. Please try again.');
+        this.warn(eosID, 'Could not find your player information. Please try again.');
         return;
       }
 
       // Check if player is already in a squad
       if (player.squadID !== null && player.squadID > 0) {
         this.warn(
-          steamID,
+          eosID,
           'You are already in a squad. Leave your current squad before requesting invites.'
         );
         return;
@@ -84,7 +84,7 @@ export default class LookingForSquad extends BasePlugin {
       const eligibleLeaders = await this.getEligibleSquadLeaders(player.teamID);
 
       if (eligibleLeaders.length === 0) {
-        this.warn(steamID, 'No locked squads with available slots found on your team.');
+        this.warn(eosID, 'No locked squads with available slots found on your team.');
         return;
       }
 
@@ -98,40 +98,40 @@ export default class LookingForSquad extends BasePlugin {
 
       if (successfulRequests > 0) {
         this.warn(
-          steamID,
+          eosID,
           `Invite request sent to ${successfulRequests} squad leader(s) with locked squads.`
         );
       } else {
-        this.warn(steamID, 'No valid squads found to send invite requests to.');
+        this.warn(eosID, 'No valid squads found to send invite requests to.');
       }
     } catch (error) {
       console.error('Error handling general invite:', error);
-      this.warn(steamID, 'An error occurred. Please try again later.');
+      this.warn(eosID, 'An error occurred. Please try again later.');
     }
   }
 
   // Handle squad-specific invite request (!inv 8)
   async handleSquadSpecificInvite(event, squadNumber) {
-    const { steamID } = event;
+    const { eosID } = event;
 
     // Check for cooldown before processing any invite commands
-    if (this.shouldRateLimit(steamID)) {
-      const remaining = this.getCooldownRemaining(steamID);
-      this.warn(steamID, `Please wait ${remaining} seconds before sending another invite request.`);
+    if (this.shouldRateLimit(eosID)) {
+      const remaining = this.getCooldownRemaining(eosID);
+      this.warn(eosID, `Please wait ${remaining} seconds before sending another invite request.`);
       return false;
     }
 
     try {
-      const player = await this.getPlayer(steamID);
+      const player = await this.getPlayer(eosID);
       if (!player) {
-        this.warn(steamID, 'Could not find your player information. Please try again.');
+        this.warn(eosID, 'Could not find your player information. Please try again.');
         return false;
       }
 
       // Check if player is already in a squad
       if (player.squadID !== null && player.squadID > 0) {
         this.warn(
-          steamID,
+          eosID,
           'You are already in a squad. Leave your current squad before requesting invites.'
         );
         return false;
@@ -139,20 +139,20 @@ export default class LookingForSquad extends BasePlugin {
 
       const squad = await this.findSquadById(squadNumber, player.teamID);
       if (!squad) {
-        this.warn(steamID, `Squad ${squadNumber} does not exist on your team.`);
+        this.warn(eosID, `Squad ${squadNumber} does not exist on your team.`);
         return false;
       }
 
       const squadLeader = await this.getSquadLeader(squad);
       if (!squadLeader) {
-        this.warn(steamID, `Squad ${squadNumber} does not have a leader.`);
+        this.warn(eosID, `Squad ${squadNumber} does not have a leader.`);
         return false;
       }
 
       // Check if squad is locked
       if (squad.locked !== 'True') {
         this.warn(
-          steamID,
+          eosID,
           `Squad ${squad.squadID} (${
             squad.squadName || 'Unnamed'
           }) is not locked. You can join directly without an invite.`
@@ -163,14 +163,14 @@ export default class LookingForSquad extends BasePlugin {
       // Check if squad is full
       if (squad.size >= this.options.maxSquadSize) {
         this.warn(
-          steamID,
+          eosID,
           `Squad ${squad.squadID} (${squad.squadName || 'Unnamed'}) is full (${squad.size}/${
             this.options.maxSquadSize
           } players). Invite request sent anyway in case someone leaves.`
         );
       } else {
         this.warn(
-          steamID,
+          eosID,
           `Invite request sent to Squad ${squad.squadID} (${squad.squadName || 'Unnamed'}) leader.`
         );
       }
@@ -178,33 +178,33 @@ export default class LookingForSquad extends BasePlugin {
       return await this.sendInviteRequest(squadLeader, player, squad);
     } catch (error) {
       console.error('Error handling squad-specific invite:', error);
-      this.warn(steamID, 'An error occurred. Please try again later.');
+      this.warn(eosID, 'An error occurred. Please try again later.');
       return false;
     }
   }
 
   // Handle player-specific invite request (!inv Player Name)
   async handlePlayerSpecificInvite(event, playerName) {
-    const { steamID } = event;
+    const { eosID } = event;
 
     // Check for cooldown before processing any invite commands
-    if (this.shouldRateLimit(steamID)) {
-      const remaining = this.getCooldownRemaining(steamID);
-      this.warn(steamID, `Please wait ${remaining} seconds before sending another invite request.`);
+    if (this.shouldRateLimit(eosID)) {
+      const remaining = this.getCooldownRemaining(eosID);
+      this.warn(eosID, `Please wait ${remaining} seconds before sending another invite request.`);
       return;
     }
 
     try {
-      const player = await this.getPlayer(steamID);
+      const player = await this.getPlayer(eosID);
       if (!player) {
-        this.warn(steamID, 'Could not find your player information. Please try again.');
+        this.warn(eosID, 'Could not find your player information. Please try again.');
         return;
       }
 
       // Check if player is already in a squad
       if (player.squadID !== null && player.squadID > 0) {
         this.warn(
-          steamID,
+          eosID,
           'You are already in a squad. Leave your current squad before requesting invites.'
         );
         return;
@@ -219,26 +219,26 @@ export default class LookingForSquad extends BasePlugin {
 
       // Check if target is on same team
       if (targetPlayer.teamID !== player.teamID) {
-        this.warn(steamID, `${targetPlayer.name} is on the opposing team.`);
+        this.warn(eosID, `${targetPlayer.name} is on the opposing team.`);
         return;
       }
 
       // Check if target is a squad leader
       if (!targetPlayer.isLeader) {
-        this.warn(steamID, `${targetPlayer.name} is not a squad leader.`);
+        this.warn(eosID, `${targetPlayer.name} is not a squad leader.`);
         return;
       }
 
       const squad = await this.findSquadById(targetPlayer.squadID, targetPlayer.teamID);
       if (!squad) {
-        this.warn(steamID, `${targetPlayer.name} is not in a squad.`);
+        this.warn(eosID, `${targetPlayer.name} is not in a squad.`);
         return;
       }
 
       // Check if squad is locked
       if (squad.locked !== 'True') {
         this.warn(
-          steamID,
+          eosID,
           `${targetPlayer.name}'s squad (${
             squad.squadName || 'Unnamed'
           }) is not locked. You can join directly without an invite.`
@@ -249,14 +249,14 @@ export default class LookingForSquad extends BasePlugin {
       // Check if squad is full
       if (squad.size >= this.options.maxSquadSize) {
         this.warn(
-          steamID,
+          eosID,
           `${targetPlayer.name}'s squad (${squad.squadName || 'Unnamed'}) is full (${squad.size}/${
             this.options.maxSquadSize
           } players). Invite request sent anyway in case someone leaves.`
         );
       } else {
         this.warn(
-          steamID,
+          eosID,
           `Invite request sent to ${targetPlayer.name} (Squad ${squad.squadID}: ${
             squad.squadName || 'Unnamed'
           }).`
@@ -266,7 +266,7 @@ export default class LookingForSquad extends BasePlugin {
       await this.sendInviteRequest(targetPlayer, player, squad);
     } catch (error) {
       console.error('Error handling player-specific invite:', error);
-      this.warn(steamID, 'An error occurred. Please try again later.');
+      this.warn(eosID, 'An error occurred. Please try again later.');
     }
   }
 
@@ -297,7 +297,7 @@ export default class LookingForSquad extends BasePlugin {
         const success = await this.handleSquadSpecificInvite(event, squadNumber);
         if (!success) {
           this.warn(
-            event.steamID,
+            event.eosID,
             'If you meant to invite a player with a numeric name, try adding letters.'
           );
         }
@@ -308,29 +308,29 @@ export default class LookingForSquad extends BasePlugin {
     }
   }
 
-  shouldRateLimit(steamID) {
+  shouldRateLimit(eosID) {
     const now = Date.now();
-    const lastUsed = this.lastUsed.get(steamID) || 0;
+    const lastUsed = this.lastUsed.get(eosID) || 0;
     const timeSinceLastUsed = now - lastUsed;
     const shouldLimit = timeSinceLastUsed < this.options.cooldownSeconds * 1000;
 
     if (!shouldLimit) {
-      this.lastUsed.set(steamID, now); // Update last used time
+      this.lastUsed.set(eosID, now); // Update last used time
     }
 
     return shouldLimit;
   }
 
-  getCooldownRemaining(steamID) {
+  getCooldownRemaining(eosID) {
     const now = Date.now();
-    const lastUsed = this.lastUsed.get(steamID) || 0;
+    const lastUsed = this.lastUsed.get(eosID) || 0;
     const timeSinceLastUsed = now - lastUsed;
     return Math.max(0, Math.ceil((this.options.cooldownSeconds * 1000 - timeSinceLastUsed) / 1000));
   }
 
-  async getPlayer(steamID) {
+  async getPlayer(eosID) {
     const players = await this.server.rcon.getListPlayers();
-    return players.find((player) => player.steamID === steamID);
+    return players.find((player) => player.eosID === eosID);
   }
 
   // Helper function to find squad by ID on a specific team
@@ -395,7 +395,7 @@ export default class LookingForSquad extends BasePlugin {
 
     if (matches.length > 1) {
       this.warn(
-        sender.steamID,
+        sender.eosID,
         `Multiple players found with similar names. Please be more specific.`
       );
       return null;
@@ -412,13 +412,13 @@ export default class LookingForSquad extends BasePlugin {
 
     if (matches.length > 1) {
       this.warn(
-        sender.steamID,
+        sender.eosID,
         `Multiple players found matching "${normalizedName}". Please be more specific.`
       );
       return null;
     }
 
-    this.warn(sender.steamID, `Player "${normalizedName}" not found.`);
+    this.warn(sender.eosID, `Player "${normalizedName}" not found.`);
     return null;
   }
 
@@ -426,7 +426,7 @@ export default class LookingForSquad extends BasePlugin {
   async sendInviteRequest(squadLeader, requestingPlayer, squad) {
     try {
       const message = `[INVITE REQUEST] ${requestingPlayer.name} is requesting an invite.\nSquad: ${squad.size}/${this.options.maxSquadSize} players`;
-      this.warn(squadLeader.steamID, message);
+      this.warn(squadLeader.eosID, message);
       return true;
     } catch (error) {
       console.error('Error sending invite request:', error);
