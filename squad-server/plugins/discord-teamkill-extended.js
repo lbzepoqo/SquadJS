@@ -1,4 +1,5 @@
 import DiscordTeamkill from './discord-teamkill.js';
+import { playerNameLink } from '../utils/player-links.js';
 
 export default class DiscordTeamkillExtended extends DiscordTeamkill {
   static get description() {
@@ -33,6 +34,6 @@ export default class DiscordTeamkillExtended extends DiscordTeamkill {
 
   formatPlayer(player) {
     if (!player) return 'Unknown';
-    return `[\`${player.name}\`](<https://steamcommunity.com/profiles/${player.steamID}>)`;
+    return playerNameLink(player.name, player.steamID);
   }
 }

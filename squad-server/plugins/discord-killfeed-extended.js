@@ -1,6 +1,5 @@
 import DiscordKillFeed from './discord-killfeed.js';
-
-const BATTLEMETRICS_PLAYER_SEARCH_URL = 'https://www.battlemetrics.com/rcon/players';
+import { battlemetricsPlayerUrl, playerNameLink } from '../utils/player-links.js';
 
 export default class DiscordKillFeedExtended extends DiscordKillFeed {
   static get description() {
@@ -122,8 +121,8 @@ export default class DiscordKillFeedExtended extends DiscordKillFeed {
 
   formatPlayer(player) {
     if (!player) return '`Unknown`';
-    const profileUrl = `https://steamcommunity.com/profiles/${player.steamID}`;
-    const battlemetricsUrl = `${BATTLEMETRICS_PLAYER_SEARCH_URL}?filter[search]=${player.steamID}&method=quick&redirect=1`;
-    return `[\`${player.name}\`](<${profileUrl}>) [\`${player.teamID}\`][[\`BM\`](<${battlemetricsUrl}>)]`;
+    const nameLink = playerNameLink(player.name, player.steamID);
+    const battlemetricsUrl = battlemetricsPlayerUrl(player);
+    return `${nameLink} [\`${player.teamID}\`][[\`BM\`](<${battlemetricsUrl}>)]`;
   }
 }
