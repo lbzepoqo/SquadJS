@@ -712,7 +712,7 @@ Join {{server.name}} and help us seed.</code></pre></li>
 <details>
           <summary>DiscordDisconnectWhitelister</summary>
           <h2>DiscordDisconnectWhitelister</h2>
-          <p>Auto-whitelists players who trigger <code>PLAYER_DISCONNECTED</code> through AdminSync in Admins.cfg. Only processes players with a linked Discord account (checked via MySquadStats when an access token is set, then the Whitelister API). Players already in a reserve-capable group or kicked by an admin or plugin are skipped. Optionally logs results to a Discord channel.</p>
+          <p>Gives players who trigger <code>PLAYER_DISCONNECTED</code> temporary reserve access through AdminSync in Admins.cfg, so they can rejoin without the queue. Players with a linked Discord account (checked via MySquadStats when an access token is set, then the Whitelister API when its URL and key are set) get a longer entry. Players already in a reserve-capable group or kicked by an admin or plugin are skipped. Optionally logs results to a Discord channel.</p>
           <h3>Options</h3>
           <ul><li><h4>discordClient (Required)</h4>
            <h6>Description</h6>
@@ -730,26 +730,32 @@ Join {{server.name}} and help us seed.</code></pre></li>
            <p>Whether to @mention the whitelisted player's Discord account in the log message.</p>
            <h6>Default</h6>
            <pre><code>false</code></pre></li>
-<li><h4>whitelisterApiUrl (Required)</h4>
+<li><h4>whitelisterApiUrl</h4>
            <h6>Description</h6>
-           <p>The URL of the Squad Whitelister API.</p>
+           <p>The URL of the Squad Whitelister API. Leave empty to skip the Whitelister lookup.</p>
            <h6>Default</h6>
-           <pre><code>http://your-api-url.com</code></pre></li>
-<li><h4>whitelisterApiKey (Required)</h4>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>https://whitelister.example.com</code></pre>
+<li><h4>whitelisterApiKey</h4>
            <h6>Description</h6>
            <p>The API key for the Squad Whitelister.</p>
            <h6>Default</h6>
            <pre><code></code></pre></li>
 <li><h4>mySquadStatsAccessToken</h4>
            <h6>Description</h6>
-           <p>MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to look up linked accounts on the Whitelister only.</p>
+           <p>MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to skip the MySquadStats lookup.</p>
            <h6>Default</h6>
            <pre><code></code></pre></li>
 <li><h4>whitelistDurationHours</h4>
            <h6>Description</h6>
-           <p>Duration in hours for the whitelist entry.</p>
+           <p>Duration in hours for the whitelist entry of a player without a linked Discord account.</p>
            <h6>Default</h6>
            <pre><code>0.1</code></pre></li>
+<li><h4>linkedWhitelistDurationHours</h4>
+           <h6>Description</h6>
+           <p>Duration in hours for the whitelist entry of a player with a linked Discord account. A player whose link cannot be checked within 5 seconds gets <code>whitelistDurationHours</code>.</p>
+           <h6>Default</h6>
+           <pre><code>0.25</code></pre></li>
 <li><h4>remoteWhitelistUrl</h4>
            <h6>Description</h6>
            <p>URL or array of URLs to fetch remote whitelist data from, used to skip players already in a reserve group.</p>

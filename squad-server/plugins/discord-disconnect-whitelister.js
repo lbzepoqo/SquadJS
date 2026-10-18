@@ -6,13 +6,17 @@ import axios from 'axios';
 const KICK_DISCONNECT_WINDOW_MS = 60 * 1000;
 // Saved links older than this are dropped at startup.
 const LINK_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// The grant waits this long for the account lookups. A slower lookup still finishes and saves the link
+// for the next disconnect, but this grant gets the unlinked duration.
+const LINK_LOOKUP_WAIT_MS = 5000;
 
 export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
   static get description() {
     return (
-      'Auto-whitelists players who trigger <code>PLAYER_DISCONNECTED</code> through AdminSync in Admins.cfg. ' +
-      'Only processes players with a linked Discord account (checked via MySquadStats when an access token is set, then the Whitelister API). ' +
-      'Players already in a reserve-capable group or kicked by an admin or plugin are skipped. ' +
+      'Gives players who trigger <code>PLAYER_DISCONNECTED</code> temporary reserve access through AdminSync in ' +
+      'Admins.cfg, so they can rejoin without the queue. Players with a linked Discord account (checked via ' +
+      'MySquadStats when an access token is set, then the Whitelister API when its URL and key are set) get ' +
+      'a longer entry. Players already in a reserve-capable group or kicked by an admin or plugin are skipped. ' +
       'Optionally logs results to a Discord channel.'
     );
   }
@@ -37,12 +41,14 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
         default: false
       },
       whitelisterApiUrl: {
-        required: true,
-        description: 'The URL of the Squad Whitelister API.',
-        default: 'http://your-api-url.com'
+        required: false,
+        description:
+          'The URL of the Squad Whitelister API. Leave empty to skip the Whitelister lookup.',
+        default: '',
+        example: 'https://whitelister.example.com'
       },
       whitelisterApiKey: {
-        required: true,
+        required: false,
         description: 'The API key for the Squad Whitelister.',
         default: ''
       },
@@ -50,13 +56,21 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
         required: false,
         description:
           'MySquadStats access token, the same one the <code>MySquadStats</code> plugin uses. Leave empty to ' +
-          'look up linked accounts on the Whitelister only.',
+          'skip the MySquadStats lookup.',
         default: ''
       },
       whitelistDurationHours: {
         required: false,
-        description: 'Duration in hours for the whitelist entry.',
+        description:
+          'Duration in hours for the whitelist entry of a player without a linked Discord account.',
         default: 0.1
+      },
+      linkedWhitelistDurationHours: {
+        required: false,
+        description:
+          'Duration in hours for the whitelist entry of a player with a linked Discord account. A player ' +
+          'whose link cannot be checked within 5 seconds gets <code>whitelistDurationHours</code>.',
+        default: 0.25
       },
       remoteWhitelistUrl: {
         required: false,
@@ -119,6 +133,7 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
     this.whitelistRefreshInterval = null;
     this.linkCache = new Map();
     this.linkCacheWrite = Promise.resolve();
+    this.linkLookups = new Map();
   }
 
   async prepareToMount() {
@@ -226,32 +241,33 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
 
   async addPlayerToWhitelist(eosID, steamID, name) {
     const now = Date.now();
-    const whitelistDurationMs = this.options.whitelistDurationHours * 60 * 60 * 1000;
-    const lastWhitelisted = this.whitelistedPlayers.get(eosID);
+    const expiresAt = this.whitelistedPlayers.get(eosID);
 
-    if (lastWhitelisted && now - lastWhitelisted < whitelistDurationMs) {
+    if (expiresAt > now) {
       this.verbose(2, `Player ${eosID} recently whitelisted — skipping.`);
       return;
     }
 
     if (this.isPlayerInReserveGroup(eosID)) {
-      this.whitelistedPlayers.set(eosID, now);
+      this.whitelistedPlayers.set(
+        eosID,
+        now + this.options.whitelistDurationHours * 60 * 60 * 1000
+      );
       return;
     }
 
-    const link = await this.findLinkedAccount(eosID);
+    const link = await this.waitForLinkedAccount(eosID);
     const playerName = name ?? link?.name ?? `Unknown (${eosID})`;
     const discordUserId = link?.discordUserId ?? null;
     const resolvedSteamID = steamID ?? link?.steamID ?? null;
+    const durationHours = discordUserId
+      ? this.options.linkedWhitelistDurationHours
+      : this.options.whitelistDurationHours;
 
     if (this.stopped) return;
     // The kick can arrive while the account lookups are running.
     if (this.wasRecentlyKicked(eosID)) {
       this.verbose(1, `Player ${eosID} was kicked — skipping whitelist.`);
-      return;
-    }
-    if (!discordUserId) {
-      this.verbose(2, `Player ${playerName} (${eosID}) has no linked Discord — skipping.`);
       return;
     }
 
@@ -261,7 +277,7 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
           !this.server.emit('TEMPORARY_RESERVE_REQUEST', {
             eosID,
             steamID: resolvedSteamID,
-            durationHours: this.options.whitelistDurationHours,
+            durationHours,
             resolve,
             reject
           })
@@ -269,17 +285,57 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
           reject(new Error('AdminSync must be enabled to grant temporary reserve access'));
         }
       });
-      this.verbose(1, `Whitelisted ${playerName} (${eosID}) in Admins.cfg`);
-      this.whitelistedPlayers.set(eosID, now);
+      this.verbose(
+        1,
+        `Whitelisted ${playerName} (${eosID}) in Admins.cfg for ${durationHours} hours` +
+          (discordUserId ? ` (linked via ${link.source})` : '')
+      );
+      this.whitelistedPlayers.set(eosID, now + durationHours * 60 * 60 * 1000);
       const acknowledged = await this.scheduleConfigReload();
       // The grant is already written. Only the reload command waits for the next map start.
       const status = acknowledged ? 'active' : this.allowConfigReload ? 'unconfirmed' : 'deferred';
       if (!this.stopped) {
-        await this.sendSuccessEmbed(playerName, eosID, resolvedSteamID, discordUserId, status);
+        await this.sendSuccessEmbed(
+          playerName,
+          resolvedSteamID,
+          discordUserId,
+          durationHours,
+          status
+        );
       }
     } catch (error) {
       this.verbose(1, `Temporary reserve write failed for ${eosID}: ${error.message}`);
       await this.sendFailureEmbed(eosID, 'Error Message', error.message);
+    }
+  }
+
+  // Resolves to the link, or to null when the lookups take longer than LINK_LOOKUP_WAIT_MS. A running
+  // lookup is shared, so a player who disconnects again meanwhile does not start a second one.
+  async waitForLinkedAccount(eosID) {
+    let lookup = this.linkLookups.get(eosID);
+    if (!lookup) {
+      lookup = this.findLinkedAccount(eosID)
+        .catch((error) => {
+          this.verbose(1, `Account lookup failed for ${eosID}: ${error.message}`);
+          return null;
+        })
+        .finally(() => this.linkLookups.delete(eosID));
+      this.linkLookups.set(eosID, lookup);
+    }
+    let waitTimeout;
+    const timedOut = new Promise((resolve) => {
+      waitTimeout = setTimeout(() => {
+        this.verbose(
+          1,
+          `Account lookup for ${eosID} is still running; granting the unlinked duration.`
+        );
+        resolve(null);
+      }, LINK_LOOKUP_WAIT_MS);
+    });
+    try {
+      return await Promise.race([lookup, timedOut]);
+    } finally {
+      clearTimeout(waitTimeout);
     }
   }
 
@@ -350,6 +406,7 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
   }
 
   async lookUpWhitelister(eosID) {
+    if (!this.options.whitelisterApiUrl || !this.options.whitelisterApiKey) return null;
     try {
       const response = await axios.get(
         `${this.options.whitelisterApiUrl}/api/players/read/from/eosId/${eosID}?apiKey=${this.options.whitelisterApiKey}`,
@@ -411,10 +468,16 @@ export default class DiscordDisconnectWhitelister extends DiscordBasePlugin {
     return this.linkCacheWrite;
   }
 
-  async sendSuccessEmbed(playerName, eosID, steamID, discordUserId, status = 'unconfirmed') {
+  async sendSuccessEmbed(
+    playerName,
+    steamID,
+    discordUserId,
+    durationHours,
+    status = 'unconfirmed'
+  ) {
     if (!this.channel) return;
 
-    const durationMinutes = Number((this.options.whitelistDurationHours * 60).toFixed(2));
+    const durationMinutes = Number((durationHours * 60).toFixed(2));
     const minuteUnit = durationMinutes === 1 ? 'minute' : 'minutes';
     const links = steamID
       ? `[Steam](https://steamcommunity.com/profiles/${steamID}) | [BattleMetrics](https://www.battlemetrics.com/players?filter[search]=${steamID})`
