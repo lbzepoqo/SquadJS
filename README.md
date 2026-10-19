@@ -2296,7 +2296,7 @@ Grafana:
 <details>
           <summary>SeedingPoints</summary>
           <h2>SeedingPoints</h2>
-          <p>The <code>SeedingPoints</code> plugin gives players points for every minute they are on the server while it is seeding, with a higher multiplier at lower player counts, where seeding is hardest. A minute counts only when the player was active recently (spawned, changed squad, chatted, hit or revived someone, or created a squad), so idle players do not collect points. Points are stored per player (by EOS ID) and UTC day, and the day leaderboard can be posted to Discord. The points give no reward by themselves.</p>
+          <p>The <code>SeedingPoints</code> plugin gives players points for every minute they are on the server while it is seeding, with a higher multiplier at lower player counts, where seeding is hardest. A minute counts only when the player was active recently (spawned, changed squad, chatted, hit or revived someone, or created a squad), so idle players do not collect points. Points are stored per player (by EOS ID) and UTC day, and daily and weekly leaderboards can be posted to Discord. The points give no reward by themselves.</p>
           <h3>Options</h3>
           <ul><li><h4>discordClient (Required)</h4>
            <h6>Description</h6>
@@ -2347,18 +2347,28 @@ Grafana:
            <pre><code>15</code></pre></li>
 <li><h4>channelID</h4>
            <h6>Description</h6>
-           <p>ID of the channel for the daily leaderboard. Leave empty to post no leaderboard. The Discord connector is required either way.</p>
+           <p>ID of the channel for the leaderboards. Leave empty to post no leaderboard. The Discord connector is required either way.</p>
            <h6>Default</h6>
            <pre><code></code></pre></li><h6>Example</h6>
            <pre><code>667741905228136459</code></pre>
 <li><h4>leaderboardHourUTC</h4>
            <h6>Description</h6>
-           <p>UTC hour (0 to 23) at which the leaderboard of the previous UTC day is posted. A restart over that hour skips the post for that day.</p>
+           <p>UTC hour (0 to 23) at which the leaderboards are posted. A restart over that hour skips that day's posts, and on a Monday also the weekly one.</p>
            <h6>Default</h6>
            <pre><code>1</code></pre></li>
+<li><h4>dailyLeaderboard</h4>
+           <h6>Description</h6>
+           <p>Post the leaderboard of the previous UTC day every day.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
+<li><h4>weeklyLeaderboard</h4>
+           <h6>Description</h6>
+           <p>Post the leaderboard of the previous week (Monday to Sunday, UTC) every Monday, with the points of the 7 days summed per player.</p>
+           <h6>Default</h6>
+           <pre><code>true</code></pre></li>
 <li><h4>leaderboardSize</h4>
            <h6>Description</h6>
-           <p>Number of players in the daily leaderboard.</p>
+           <p>Number of players in each leaderboard.</p>
            <h6>Default</h6>
            <pre><code>10</code></pre></li>
 <li><h4>color</h4>

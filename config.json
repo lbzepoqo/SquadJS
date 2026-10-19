@@ -633,6 +633,8 @@
       "activityWindowMinutes": 15,
       "channelID": "",
       "leaderboardHourUTC": 1,
+      "dailyLeaderboard": true,
+      "weeklyLeaderboard": true,
       "leaderboardSize": 10,
       "color": 3066993
     },
