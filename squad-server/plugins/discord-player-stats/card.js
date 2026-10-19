@@ -51,6 +51,17 @@ const AXIS_LABELS = {
 const RADAR_AXES = RANKED_MEASURES.map((measure) => ({ measure, lines: AXIS_LABELS[measure] }));
 
 const number = (value) => Math.round(value).toLocaleString('en-US');
+
+// Narrower than this, the seeding line would be cut to a few characters.
+const MINIMUM_SEEDING_WIDTH = 240;
+
+// "45 min", "12 h 5 min".
+function seedingDuration(minutes) {
+  const wholeMinutes = Math.floor(minutes);
+  const hours = Math.floor(wholeMinutes / 60);
+  return hours > 0 ? `${hours} h ${wholeMinutes % 60} min` : `${wholeMinutes} min`;
+}
+
 const font = (weight, size) => `${weight} ${size}px CardDisplay`;
 
 // Sets the largest font from `size` down to `minimumSize` that fits, then shortens the text if it still does not.
@@ -394,12 +405,13 @@ export async function cropToCard(imageBuffer) {
 /**
  * Renders the stats card as a PNG buffer.
  * `ranks` holds the "Top X%" value of each ranked measure, empty when the player has no ranking;
- * `unrankedNote` then says why. `highlights` is the result of `fetchPlayerHighlights`. `background` is an optional `{ image, credit }` photo already cropped to
+ * `unrankedNote` then says why. `highlights` is the result of `fetchPlayerHighlights`. `seeding` is `{ days, minutes, points }`, or null to
+ * leave the seeding line out. `background` is an optional `{ image, credit }` photo already cropped to
  * the card size.
  */
 export function renderCard(
   stats,
-  { title, since, ranks = {}, rankedPlayers = 0, unrankedNote, highlights, background }
+  { title, since, ranks = {}, rankedPlayers = 0, unrankedNote, highlights, seeding, background }
 ) {
   const canvas = createCanvas(CARD_WIDTH, CARD_HEIGHT);
   const context = canvas.getContext('2d');
@@ -408,7 +420,22 @@ export function renderCard(
   const leftWidth = 540;
   context.fillStyle = COLORS.muted;
   context.font = font('500', 20);
-  context.fillText(title.toUpperCase(), PADDING, 50);
+  const titleText = title.toUpperCase();
+  context.fillText(titleText, PADDING, 50);
+  // The seeding line shares the title row; it is left out when a long title leaves too little room.
+  const seedingWidth = leftWidth - context.measureText(titleText).width - 24;
+  if (seeding && seedingWidth >= MINIMUM_SEEDING_WIDTH) {
+    const seedingText = `Seeded ${seedingDuration(seeding.minutes)}, ${number(
+      seeding.points
+    )} pts in ${seeding.days} days`;
+    context.textAlign = 'right';
+    context.fillText(
+      fitText(context, seedingText, seedingWidth, 20, 14, '500'),
+      PADDING + leftWidth,
+      50
+    );
+    context.textAlign = 'left';
+  }
 
   context.fillStyle = COLORS.ink;
   const name = stats.name?.trim() || stats.steamID;

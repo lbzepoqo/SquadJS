@@ -7,6 +7,8 @@ import {
 
 import DiscordBasePlugin from './discord-base-plugin.js';
 import LinkResolver from './discord-player-stats/link-resolver.js';
+import { utcDay } from './seeding-points/points.js';
+import { defineSeedingDay, fetchSeedingSummary } from './seeding-points/store.js';
 import {
   fetchFirstMatchTime,
   fetchLeaderboard,
@@ -23,6 +25,7 @@ const FIRST_LEADERBOARD_DELAY_MS = 60 * 1000;
 // above 2^31 - 1 ms at once.
 const MINIMUM_REFRESH_MS = 10 * 60 * 1000;
 const MAXIMUM_REFRESH_MS = 2147483647;
+const SEEDING_SUMMARY_DAYS = 30;
 
 function boundedInterval(milliseconds) {
   return Math.min(MAXIMUM_REFRESH_MS, Math.max(MINIMUM_REFRESH_MS, Number(milliseconds) || 0));
@@ -159,6 +162,8 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
     this.leaderboardAttempted = false;
     this.renderCard = null;
     this.backgrounds = null;
+    // The SeedingPoints table, read on this plugin's database; it exists once SeedingPoints has run there.
+    this.SeedingDay = defineSeedingDay(this.options.database);
     this.mounted = false;
     this.onInteraction = this.onInteraction.bind(this);
     this.refreshLeaderboard = this.refreshLeaderboard.bind(this);
@@ -322,6 +327,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
           return {};
         }
       );
+      const seeding = await this.seedingSummary(link.steamID);
       const background = await this.backgrounds?.pick();
       const card = this.renderCard(stats, {
         title: this.options.cardTitle,
@@ -330,6 +336,7 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
         rankedPlayers: this.leaderboard?.size,
         unrankedNote: this.unrankedNote(stats),
         highlights,
+        seeding,
         background
       });
       await interaction.editReply({
@@ -340,6 +347,30 @@ export default class DiscordPlayerStats extends DiscordBasePlugin {
       const reply = { content: 'Could not load the stats right now. Try again later.' };
       if (interaction.deferred) await interaction.editReply(reply).catch(() => {});
       else await interaction.reply({ ...reply, flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+  }
+
+  // The player's seeding over the last SEEDING_SUMMARY_DAYS days from the SeedingPoints table. Null hides the
+  // seeding line on the card: no seeding in that window, or no table because SeedingPoints never ran on this
+  // database.
+  async seedingSummary(steamID) {
+    try {
+      const summary = await fetchSeedingSummary(
+        this.SeedingDay,
+        { steamID },
+        utcDay(Date.now()),
+        SEEDING_SUMMARY_DAYS
+      );
+      if (summary.recentMinutes === 0 && summary.recentPoints === 0) return null;
+      return {
+        days: SEEDING_SUMMARY_DAYS,
+        minutes: summary.recentMinutes,
+        points: summary.recentPoints
+      };
+    } catch (error) {
+      // Level 2: a missing table is the normal case on a server without SeedingPoints.
+      this.verbose(2, `Could not read the seeding summary for ${steamID}: ${error.message}`);
+      return null;
     }
   }
 }
