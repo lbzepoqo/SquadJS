@@ -2294,6 +2294,81 @@ Grafana:
         </details>
 
 <details>
+          <summary>SeedingPoints</summary>
+          <h2>SeedingPoints</h2>
+          <p>The <code>SeedingPoints</code> plugin gives players points for every minute they are on the server while it is seeding, with a higher multiplier at lower player counts, where seeding is hardest. A minute counts only when the player was active recently (spawned, changed squad, chatted, hit or revived someone, or created a squad), so idle players do not collect points. Points are stored per player (by EOS ID) and UTC day, and the day leaderboard can be posted to Discord. The points give no reward by themselves.</p>
+          <h3>Options</h3>
+          <ul><li><h4>discordClient (Required)</h4>
+           <h6>Description</h6>
+           <p>Discord connector name.</p>
+           <h6>Default</h6>
+           <pre><code>discord</code></pre></li>
+<li><h4>database (Required)</h4>
+           <h6>Description</h6>
+           <p>The Sequelize connector that stores the points.</p>
+           <h6>Default</h6>
+           <pre><code>sqlite</code></pre></li>
+<li><h4>seedingStartPlayerCount</h4>
+           <h6>Description</h6>
+           <p>Lowest player count at which the server counts as seeding.</p>
+           <h6>Default</h6>
+           <pre><code>1</code></pre></li>
+<li><h4>livePlayerCount</h4>
+           <h6>Description</h6>
+           <p>Player count at which the server counts as live. Seeding is from the start count up to one below this.</p>
+           <h6>Default</h6>
+           <pre><code>35</code></pre></li>
+<li><h4>multipliers</h4>
+           <h6>Description</h6>
+           <p>Points per minute by player count. Each band applies from its <code>minimumPlayers</code> up to the next band.</p>
+           <h6>Default</h6>
+           <pre><code>[
+  {
+    "minimumPlayers": 1,
+    "multiplier": 3
+  },
+  {
+    "minimumPlayers": 5,
+    "multiplier": 2
+  },
+  {
+    "minimumPlayers": 10,
+    "multiplier": 1.5
+  },
+  {
+    "minimumPlayers": 20,
+    "multiplier": 1
+  }
+]</code></pre></li>
+<li><h4>activityWindowMinutes</h4>
+           <h6>Description</h6>
+           <p>A minute counts only when the player was active within this many minutes. Joining counts as activity, and so does joining a squad, but not being removed from one. 0 counts every minute.</p>
+           <h6>Default</h6>
+           <pre><code>15</code></pre></li>
+<li><h4>channelID</h4>
+           <h6>Description</h6>
+           <p>ID of the channel for the daily leaderboard. Leave empty to post no leaderboard. The Discord connector is required either way.</p>
+           <h6>Default</h6>
+           <pre><code></code></pre></li><h6>Example</h6>
+           <pre><code>667741905228136459</code></pre>
+<li><h4>leaderboardHourUTC</h4>
+           <h6>Description</h6>
+           <p>UTC hour (0 to 23) at which the leaderboard of the previous UTC day is posted. A restart over that hour skips the post for that day.</p>
+           <h6>Default</h6>
+           <pre><code>1</code></pre></li>
+<li><h4>leaderboardSize</h4>
+           <h6>Description</h6>
+           <p>Number of players in the daily leaderboard.</p>
+           <h6>Default</h6>
+           <pre><code>10</code></pre></li>
+<li><h4>color</h4>
+           <h6>Description</h6>
+           <p>The color of the leaderboard embed.</p>
+           <h6>Default</h6>
+           <pre><code>3066993</code></pre></li></ul>
+        </details>
+
+<details>
           <summary>DiscordAdminRequest</summary>
           <h2>DiscordAdminRequest</h2>
           <p>The <code>DiscordAdminRequest</code> plugin will ping admins in a Discord channel when a player requests an admin via the <code>!admin</code> command in in-game chat.</p>

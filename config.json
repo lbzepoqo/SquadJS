@@ -606,6 +606,37 @@
       "disableCBL": false
     },
     {
+      "plugin": "SeedingPoints",
+      "enabled": false,
+      "discordClient": "discord",
+      "database": "sqlite",
+      "seedingStartPlayerCount": 1,
+      "livePlayerCount": 35,
+      "multipliers": [
+        {
+          "minimumPlayers": 1,
+          "multiplier": 3
+        },
+        {
+          "minimumPlayers": 5,
+          "multiplier": 2
+        },
+        {
+          "minimumPlayers": 10,
+          "multiplier": 1.5
+        },
+        {
+          "minimumPlayers": 20,
+          "multiplier": 1
+        }
+      ],
+      "activityWindowMinutes": 15,
+      "channelID": "",
+      "leaderboardHourUTC": 1,
+      "leaderboardSize": 10,
+      "color": 3066993
+    },
+    {
       "plugin": "DiscordAdminRequest",
       "enabled": true,
       "discordClient": "discord",
