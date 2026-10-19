@@ -9,11 +9,12 @@ import {
 } from '../squad-server/plugins/seeding-points/points.js';
 import {
   defineSeedingDay,
-  fetchDayLeaderboard,
+  fetchSeedingLeaderboard,
   fetchSeedingSummary,
   readDay,
   writeDay
 } from '../squad-server/plugins/seeding-points/store.js';
+import SeedingPoints from '../squad-server/plugins/seeding-points.js';
 
 const MULTIPLIERS = [
   { minimumPlayers: 1, multiplier: 3 },
@@ -149,7 +150,7 @@ describe('SeedingPoints store', () => {
   });
 
   it('ranks the day by points and sums the last 30 days and the total', async () => {
-    const leaderboard = await fetchDayLeaderboard(SeedingDay, '2026-10-19', 10);
+    const leaderboard = await fetchSeedingLeaderboard(SeedingDay, '2026-10-19', '2026-10-19', 10);
     assert.deepStrictEqual(
       leaderboard.map((row) => [row.name, row.points]),
       [
@@ -170,5 +171,58 @@ describe('SeedingPoints store', () => {
       '2026-10-19'
     );
     assert.strictEqual(bySteamID.totalPoints, 20);
+  });
+
+  it('sums a week per player, keeps the latest name and leaves out days outside the week', async () => {
+    const day = (player, date, name, points) =>
+      writeDay(SeedingDay, {
+        eosID: eosID(player),
+        day: date,
+        steamID: null,
+        name,
+        minutes: 10,
+        points
+      });
+    await day(4, '2026-11-02', 'Before', 30);
+    await day(4, '2026-11-08', 'D', 20);
+    await day(5, '2026-11-05', 'E', 36);
+    await day(6, '2026-11-01', 'F', 40);
+    await day(6, '2026-11-09', 'F', 99);
+    const leaderboard = await fetchSeedingLeaderboard(SeedingDay, '2026-11-02', '2026-11-08', 10);
+    assert.deepStrictEqual(
+      leaderboard.map((row) => [row.name, row.points]),
+      [
+        ['D', 50],
+        ['E', 36]
+      ]
+    );
+  });
+});
+
+describe('SeedingPoints leaderboard posts', () => {
+  const postsAt = async (
+    postTime,
+    options = { dailyLeaderboard: true, weeklyLeaderboard: true }
+  ) => {
+    const posts = [];
+    const plugin = {
+      options,
+      save: async () => {},
+      postLeaderboard: async (period, firstDay, lastDay) => posts.push([firstDay, lastDay])
+    };
+    await SeedingPoints.prototype.postLeaderboards.call(plugin, postTime);
+    return posts;
+  };
+
+  it('posts the previous day, and on a Monday also the week from Monday to Sunday', async () => {
+    assert.deepStrictEqual(await postsAt(Date.UTC(2026, 9, 26, 0)), [
+      ['2026-10-25', '2026-10-25'],
+      ['2026-10-19', '2026-10-25']
+    ]);
+    assert.deepStrictEqual(await postsAt(Date.UTC(2026, 9, 27, 0)), [['2026-10-26', '2026-10-26']]);
+    assert.deepStrictEqual(
+      await postsAt(Date.UTC(2026, 9, 26, 1), { dailyLeaderboard: false, weeklyLeaderboard: true }),
+      [['2026-10-19', '2026-10-25']]
+    );
   });
 });

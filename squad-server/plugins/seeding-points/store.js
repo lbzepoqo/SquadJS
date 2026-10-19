@@ -1,6 +1,6 @@
 import Sequelize from 'sequelize';
 
-const { DataTypes } = Sequelize;
+const { DataTypes, Op } = Sequelize;
 
 export const SEEDING_DAY_TABLE = 'SeedingPoints_PlayerDay';
 
@@ -40,13 +40,35 @@ export async function writeDay(SeedingDay, total) {
   });
 }
 
-export async function fetchDayLeaderboard(SeedingDay, day, size) {
+// Players ranked by their points summed over the UTC days from `firstDay` to `lastDay`, both included. A week is
+// a few hundred rows, so the sum is done here: in SQL, a grouped query would need a second query for the names.
+// Each player keeps the name of their latest day.
+export async function fetchSeedingLeaderboard(SeedingDay, firstDay, lastDay, size) {
   const rows = await SeedingDay.findAll({
-    where: { day },
-    order: [['points', 'DESC']],
-    limit: size
+    where: { day: { [Op.between]: [firstDay, lastDay] } },
+    attributes: ['eosID', 'day', 'name', 'minutes', 'points'],
+    order: [['day', 'ASC']],
+    raw: true
   });
-  return rows.map((row) => row.get({ plain: true }));
+  const players = new Map();
+  for (const row of rows) {
+    let player = players.get(row.eosID);
+    if (!player) {
+      player = { eosID: row.eosID, name: null, minutes: 0, points: 0 };
+      players.set(row.eosID, player);
+    }
+    player.name = row.name ?? player.name;
+    player.minutes += row.minutes;
+    player.points += row.points;
+  }
+  return [...players.values()]
+    .sort(
+      (first, second) =>
+        second.points - first.points ||
+        second.minutes - first.minutes ||
+        first.eosID.localeCompare(second.eosID)
+    )
+    .slice(0, size);
 }
 
 // Minutes and points of one player over the last `days` UTC days (today included) and in total. `player` holds

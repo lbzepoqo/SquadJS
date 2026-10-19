@@ -4,7 +4,7 @@ import DiscordBasePlugin from './discord-base-plugin.js';
 import { presenceCredits, utcDay } from './seeding-points/points.js';
 import {
   defineSeedingDay,
-  fetchDayLeaderboard,
+  fetchSeedingLeaderboard,
   readDay,
   writeDay
 } from './seeding-points/store.js';
@@ -22,8 +22,8 @@ export default class SeedingPoints extends DiscordBasePlugin {
       'while it is seeding, with a higher multiplier at lower player counts, where seeding is hardest. A ' +
       'minute counts only when the player was active recently (spawned, changed squad, chatted, hit or ' +
       'revived someone, or created a squad), so idle players do not collect points. Points are stored per ' +
-      'player (by EOS ID) and UTC day, and the day leaderboard can be posted to Discord. The points give no ' +
-      'reward by themselves.'
+      'player (by EOS ID) and UTC day, and daily and weekly leaderboards can be posted to Discord. The points ' +
+      'give no reward by themselves.'
     );
   }
 
@@ -73,7 +73,7 @@ export default class SeedingPoints extends DiscordBasePlugin {
       channelID: {
         required: false,
         description:
-          'ID of the channel for the daily leaderboard. Leave empty to post no leaderboard. The Discord ' +
+          'ID of the channel for the leaderboards. Leave empty to post no leaderboard. The Discord ' +
           'connector is required either way.',
         default: '',
         example: '667741905228136459'
@@ -81,13 +81,25 @@ export default class SeedingPoints extends DiscordBasePlugin {
       leaderboardHourUTC: {
         required: false,
         description:
-          'UTC hour (0 to 23) at which the leaderboard of the previous UTC day is posted. A restart over that ' +
-          'hour skips the post for that day.',
+          'UTC hour (0 to 23) at which the leaderboards are posted. A restart over that hour skips that ' +
+          "day's posts, and on a Monday also the weekly one.",
         default: 1
+      },
+      dailyLeaderboard: {
+        required: false,
+        description: 'Post the leaderboard of the previous UTC day every day.',
+        default: true
+      },
+      weeklyLeaderboard: {
+        required: false,
+        description:
+          'Post the leaderboard of the previous week (Monday to Sunday, UTC) every Monday, with the points ' +
+          'of the 7 days summed per player.',
+        default: true
       },
       leaderboardSize: {
         required: false,
-        description: 'Number of players in the daily leaderboard.',
+        description: 'Number of players in each leaderboard.',
         default: 10
       },
       color: {
@@ -115,8 +127,10 @@ export default class SeedingPoints extends DiscordBasePlugin {
     this.dayTotals = new Map();
     this.saveChain = Promise.resolve();
     this.saveInterval = null;
+    this.leaderboardsEnabled = Boolean(
+      this.options.channelID && (this.options.dailyLeaderboard || this.options.weeklyLeaderboard)
+    );
     this.leaderboardTimer = null;
-    this.leaderboardInterval = null;
 
     this.onUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
     this.onPlayerActivity = this.onPlayerActivity.bind(this);
@@ -129,7 +143,7 @@ export default class SeedingPoints extends DiscordBasePlugin {
 
   async prepareToMount() {
     await this.SeedingDay.sync();
-    if (this.options.channelID) await super.prepareToMount();
+    if (this.leaderboardsEnabled) await super.prepareToMount();
   }
 
   async mount() {
@@ -142,7 +156,7 @@ export default class SeedingPoints extends DiscordBasePlugin {
     this.server.on('PLAYER_WOUNDED', this.onAttackerActivity);
     this.server.on('PLAYER_REVIVED', this.onPlayerRevived);
     this.saveInterval = setInterval(this.save, SAVE_INTERVAL_MS);
-    if (this.options.channelID) this.scheduleLeaderboard();
+    if (this.leaderboardsEnabled) this.scheduleLeaderboard(this.firstLeaderboardTime());
   }
 
   async unmount() {
@@ -156,7 +170,6 @@ export default class SeedingPoints extends DiscordBasePlugin {
     this.server.removeListener('PLAYER_REVIVED', this.onPlayerRevived);
     clearInterval(this.saveInterval);
     clearTimeout(this.leaderboardTimer);
-    clearInterval(this.leaderboardInterval);
     await this.save();
   }
 
@@ -303,7 +316,7 @@ export default class SeedingPoints extends DiscordBasePlugin {
     entry.name = credit.name ?? entry.name;
   }
 
-  scheduleLeaderboard() {
+  firstLeaderboardTime() {
     const now = new Date();
     const next = new Date(
       Date.UTC(
@@ -314,16 +327,51 @@ export default class SeedingPoints extends DiscordBasePlugin {
       )
     );
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
-    this.leaderboardTimer = setTimeout(() => {
-      this.postLeaderboard();
-      this.leaderboardInterval = setInterval(() => this.postLeaderboard(), MS_PER_DAY);
-    }, next.getTime() - now.getTime());
+    return next.getTime();
   }
 
-  async postLeaderboard() {
+  // One timer per post, each set for the scheduled time, so the reported day comes from the schedule and not
+  // from the moment the timer fires.
+  scheduleLeaderboard(postTime) {
+    this.leaderboardTimer = setTimeout(() => {
+      this.postLeaderboards(postTime).catch((error) =>
+        this.verbose(1, `Could not post the seeding leaderboards: ${error.message}`)
+      );
+      this.scheduleLeaderboard(postTime + MS_PER_DAY);
+    }, Math.max(0, postTime - Date.now()));
+  }
+
+  // The week runs Monday to Sunday (UTC), so its leaderboard is posted on Mondays. Points not yet saved are
+  // written first, so the last minutes of the day count.
+  async postLeaderboards(postTime) {
+    await this.save();
+    const lastDay = utcDay(postTime - MS_PER_DAY);
+    if (this.options.dailyLeaderboard)
+      await this.postLeaderboard(
+        `${lastDay} (UTC)`,
+        lastDay,
+        lastDay,
+        'No seeding points that day.'
+      );
+    if (this.options.weeklyLeaderboard && new Date(postTime).getUTCDay() === 1) {
+      const firstDay = utcDay(postTime - 7 * MS_PER_DAY);
+      await this.postLeaderboard(
+        `week ${firstDay} to ${lastDay} (UTC)`,
+        firstDay,
+        lastDay,
+        'No seeding points that week.'
+      );
+    }
+  }
+
+  async postLeaderboard(period, firstDay, lastDay, emptyText) {
     try {
-      const day = utcDay(Date.now() - MS_PER_DAY);
-      const rows = await fetchDayLeaderboard(this.SeedingDay, day, this.options.leaderboardSize);
+      const rows = await fetchSeedingLeaderboard(
+        this.SeedingDay,
+        firstDay,
+        lastDay,
+        this.options.leaderboardSize
+      );
       const lines = rows.map(
         (row, index) =>
           `${index + 1}. ${escapeMarkdown(row.name ?? row.eosID)}: ${Math.round(
@@ -333,13 +381,13 @@ export default class SeedingPoints extends DiscordBasePlugin {
       while (lines.join('\n').length > EMBED_DESCRIPTION_LIMIT) lines.pop();
       await this.sendDiscordMessage({
         embed: {
-          title: `Seeding points, ${day} (UTC)`,
+          title: `Seeding points, ${period}`,
           color: this.options.color,
-          description: lines.length > 0 ? lines.join('\n') : 'No seeding points that day.'
+          description: lines.length > 0 ? lines.join('\n') : emptyText
         }
       });
     } catch (error) {
-      this.verbose(1, `Could not post the seeding leaderboard: ${error.message}`);
+      this.verbose(1, `Could not post the seeding leaderboard (${period}): ${error.message}`);
     }
   }
 }
