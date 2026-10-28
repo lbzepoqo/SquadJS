@@ -4,10 +4,14 @@ import Logger from 'core/logger';
 
 import Layer from './layer.js';
 
+const DEFAULT_LAYER_LISTS = [
+  'https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/layers.json'
+];
+
 class Layers {
   constructor() {
     this.layers = [];
-    this.units = {};
+    this.layerLists = DEFAULT_LAYER_LISTS;
 
     this.pulled = false;
   }
@@ -19,24 +23,26 @@ class Layers {
     }
     if (force) Logger.verbose('Layers', 1, 'Forcing update to layer information...');
 
-    this.layers = [];
-
-    Logger.verbose('Layers', 1, 'Pulling layers...');
-    const response = await axios.get(
-      'https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/layers.json'
-    );
-
-    this.units = response.data.Units || {};
-
+    const layers = [];
     let skipped = 0;
-    for (const layer of response.data.Maps) {
-      try {
-        this.layers.push(new Layer(layer, this.units));
-      } catch (err) {
-        skipped++;
-        Logger.verbose('Layers', 1, `Skipped layer ${layer?.rawName}: ${err.message}`);
+
+    for (const url of this.layerLists) {
+      Logger.verbose('Layers', 1, `Pulling layers from ${url}...`);
+      const response = await axios.get(url);
+
+      // Unit ids repeat across lists with different contents, so each layer resolves against its own list.
+      const units = response.data.Units || {};
+      for (const layer of response.data.Maps) {
+        try {
+          layers.push(new Layer(layer, units));
+        } catch (err) {
+          skipped++;
+          Logger.verbose('Layers', 1, `Skipped layer ${layer?.rawName}: ${err.message}`);
+        }
       }
     }
+
+    this.layers = layers;
 
     Logger.verbose(
       'Layers',

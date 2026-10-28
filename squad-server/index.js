@@ -80,6 +80,7 @@ export default class SquadServer extends EventEmitter {
       `Beginning to watch ${this.options.host}:${this.options.queryPort}...`
     );
 
+    if (this.options.layerLists) Layers.layerLists = this.options.layerLists;
     await Layers.pull();
 
     this.admins = await fetchAdminLists(this.options.adminLists);

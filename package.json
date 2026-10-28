@@ -14,7 +14,7 @@
     "prepare": "husky install",
     "lint": "eslint --fix . && prettier --write \"./**/*.js\"",
     "lint-staged": "lint-staged",
-    "test": "node --test tests/fixtures.test.js tests/squad-balancer-strategy.test.js tests/commander-resign-tracker.test.js tests/discord-webhook-status.test.js tests/battlemetrics-flag-expiry.test.js tests/discord-player-stats.test.js tests/seeding-points.test.js",
+    "test": "node --test tests/fixtures.test.js tests/squad-balancer-strategy.test.js tests/commander-resign-tracker.test.js tests/discord-webhook-status.test.js tests/battlemetrics-flag-expiry.test.js tests/discord-player-stats.test.js tests/seeding-points.test.js tests/layers.test.js",
     "build-config": "node squad-server/scripts/build-config-file.js",
     "build-readme": "node squad-server/scripts/build-readme.js",
     "build-all": "node squad-server/scripts/build-config-file.js && node squad-server/scripts/build-readme.js"
