@@ -25,6 +25,9 @@
         "type": "",
         "source": ""
       }
+    ],
+    "layerLists": [
+      "https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/layers.json"
     ]
   },
   "connectors": {

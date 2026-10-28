@@ -104,6 +104,10 @@ The following section of the configuration contains information about your Squad
         "type": "ftp",
         "source": "ftp://<user>:<password>@<host>:<port>/<url-path>",
       }
+    ],
+    "layerLists": [
+      "https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/layers.json",
+      "https://raw.githubusercontent.com/fantinodavide/SquadLayerList/main/mods/supermod/layers.json"
     ]
   },
   ```
@@ -118,6 +122,7 @@ The following section of the configuration contains information about your Squad
 * `ftp` - FTP configuration for reading logs remotely. Only required for `ftp` `logReaderMode`.
 * `sftp` - SFTP configuration for reading logs remotely. Only required for `sftp` `logReaderMode`.
 * `adminLists` - Sources for identifying an admins on the server, either remote or local.
+* `layerLists` - URLs of [SquadLayerList](https://github.com/fantinodavide/SquadLayerList) `layers.json` files to load layer information from. Add a mod's list (for example `mods/supermod/layers.json`) next to the vanilla one when the server runs mod layers. The default is the vanilla list only.
 
   ---
 </details>
