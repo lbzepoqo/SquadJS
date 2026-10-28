@@ -26,6 +26,8 @@ export default class SquadServer extends EventEmitter {
 
     this.id = options.id;
     this.options = options;
+    // Set before any plugin can trigger the first Layers.pull().
+    if (options.layerLists) Layers.layerLists = options.layerLists;
 
     this.layerHistory = [];
     this.layerHistoryMaxLength = options.layerHistoryMaxLength || 20;
@@ -80,7 +82,6 @@ export default class SquadServer extends EventEmitter {
       `Beginning to watch ${this.options.host}:${this.options.queryPort}...`
     );
 
-    if (this.options.layerLists) Layers.layerLists = this.options.layerLists;
     await Layers.pull();
 
     this.admins = await fetchAdminLists(this.options.adminLists);

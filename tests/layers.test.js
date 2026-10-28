@@ -39,4 +39,24 @@ describe('Layers', () => {
     assert.equal((await Layers.getLayerById('Narva_AAS_v1')).teams[0].name, 'Vanilla unit');
     assert.equal((await Layers.getLayerById('SU_Narva_AAS_v1')).teams[0].name, 'SuperMod unit');
   });
+
+  it('keeps the other lists when one list fails or is not a layer list', async () => {
+    axios.get = async (url) => {
+      if (url.endsWith('missing.json')) throw new Error('Request failed with status code 404');
+      if (url.endsWith('page.html')) return { data: '<html></html>' };
+      return { data: lists[url] };
+    };
+    Layers.layerLists = [
+      'https://example.test/vanilla.json',
+      'https://example.test/missing.json',
+      'https://example.test/page.html'
+    ];
+
+    await Layers.pull(true);
+
+    assert.deepEqual(
+      Layers.layers.map((layer) => layer.layerid),
+      ['Narva_AAS_v1']
+    );
+  });
 });

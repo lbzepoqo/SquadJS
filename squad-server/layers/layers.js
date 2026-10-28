@@ -26,9 +26,22 @@ class Layers {
     const layers = [];
     let skipped = 0;
 
-    for (const url of this.layerLists) {
-      Logger.verbose('Layers', 1, `Pulling layers from ${url}...`);
-      const response = await axios.get(url);
+    Logger.verbose('Layers', 1, `Pulling layers from ${this.layerLists.join(', ')}...`);
+    // A list that fails is skipped, so one unreachable mod list does not stop SquadJS from starting.
+    const responses = await Promise.all(
+      this.layerLists.map((url) =>
+        axios.get(url).catch((err) => {
+          Logger.verbose('Layers', 1, `Failed to pull layers from ${url}: ${err.message}`);
+          return null;
+        })
+      )
+    );
+
+    for (const [index, response] of responses.entries()) {
+      if (!Array.isArray(response?.data?.Maps)) {
+        if (response) Logger.verbose('Layers', 1, `No layer list at ${this.layerLists[index]}.`);
+        continue;
+      }
 
       // Unit ids repeat across lists with different contents, so each layer resolves against its own list.
       const units = response.data.Units || {};
